@@ -2,22 +2,36 @@ use fasteval::Evaler;
 use crate::VariantRecord;
 use std::collections::HashMap;
 
-/// Filters `VariantRecord` instances based on FastEval expressions.
-pub fn filter_records<'a, I>(
-    records: I,
+use mlua::{Lua, Value};
+use crate::VariantRecord;
+use std::collections::HashMap;
+
+/// Evaluates Lua expressions on a VariantRecord's INFO field and returns whether it matches the filter.
+fn evaluate_expression(lua: &Lua, record: &VariantRecord, expression: &str) -> Result<bool, mlua::Error> {
+    let lua_exp = format!("return {}", expression);
+    let func: mlua::Function = lua.load(&lua_exp).eval()?;
+    
+    // Convert VariantRecord INFO field to Lua table
+    let info_table = lua.create_table()?;
+    for (key, value) in &record.info {
+        info_table.set(key, value)?;
+    }
+
+    func.call::<_, bool>((info_table,))
+}
+
+/// Filters variants based on user-provided Lua expressions.
+pub fn filter_variants<'a, I>(
+    variants: I,
     expressions: &[&str],
-) -> impl Iterator<Item = VariantRecord> + 'a
+) -> Result<impl Iterator<Item = VariantRecord> + 'a, mlua::Error>
 where
     I: Iterator<Item = VariantRecord> + 'a,
 {
-    records.filter(move |record| {
-        expressions.iter().all(|&expr| {
-            let mut slab = fasteval::Slab::new();
-            let mut ns = HashMap::new();
-            for (key, value) in &record.info {
-                ns.insert(format!("INFO__{}", key), value.parse::<f64>().unwrap_or(0.0));
-            }
-            fasteval::ez_eval(expr, &mut slab, &mut ns).unwrap_or(0.0) != 0.0
+    let lua = Lua::new();
+    Ok(variants.filter(move |variant| {
+        expressions.iter().all(|&expression| {
+            evaluate_expression(&lua, variant, expression).unwrap_or(false)
         })
-    })
+    }))
 }
