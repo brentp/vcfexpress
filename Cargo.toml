@@ -1,0 +1,13 @@
+[package]
+name = "vcfexpr"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+exmex = {version = "0.19.0", features = ["value"]}
+fasteval = {version = "0.2.4", features = ["unsafe-vars"]}
+mlua = {version = "0.9.6", features=["luau", "send", "parking_lot"]}
+rust-htslib = {version = "0.46.0", features = ["libdeflate", "static"] }
+clap = {version = "3.0.0"}
