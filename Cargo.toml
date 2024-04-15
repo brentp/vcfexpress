@@ -18,5 +18,5 @@ name = "vcfexpr"
 src = "src/main.rs"
 
 [lib]
-name = "vcfexprlib"
+name = "vcfexpr"
 src = "src/lib.rs"

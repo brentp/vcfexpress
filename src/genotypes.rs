@@ -41,7 +41,7 @@ impl fmt::Display for Genotype {
     }
 }
 
-fn register_variant(lua: &Lua) -> mlua::Result<()> {
+pub fn register_genotypes(lua: &Lua) -> mlua::Result<()> {
     lua.register_userdata_type::<Genotype>(|reg| {
         reg.add_meta_function(MetaMethod::ToString, |_lua, this: AnyUserData| {
             let gts = format!("{}", this.borrow::<Genotype>()?);
@@ -126,7 +126,6 @@ fn register_variant(lua: &Lua) -> mlua::Result<()> {
             let genotypes = this.format(b"GT");
             match genotypes.integer() {
                 Ok(genotypes) => {
-                    eprintln!("genotypes: {:?}", genotypes);
                     let sb = Genotypes(Arc::new(Mutex::new(I32Buffer(genotypes))));
                     Ok(sb)
                 }
@@ -139,12 +138,14 @@ fn register_variant(lua: &Lua) -> mlua::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::variant::register_variant;
     use mlua::Lua;
-    use rust_htslib::bcf::{header::HeaderView, Read};
+    use rust_htslib::bcf;
 
     fn setup() -> (Lua, bcf::Record) {
         let lua = Lua::new();
         register_variant(&lua).expect("error registering variant");
+        register_genotypes(&lua).expect("error registering genotypes");
 
         let mut header = bcf::Header::new();
         header.push_record(r#"##contig=<ID=chr1,length=10000>"#.as_bytes());
@@ -222,7 +223,7 @@ mod tests {
         let (lua, mut record) = setup();
         let gts_expr = r#"local gts = variant.genotypes; 
         for i = 1, #gts do 
-        print(gts[i]) 
+        print("printing from lua:", gts[i]) 
         print(gts[i][1], gts[i][2]) 
         end
         "#;
@@ -232,7 +233,7 @@ mod tests {
         lua.scope(|scope| {
             let ud = scope.create_any_userdata_ref_mut(&mut record).unwrap();
             globals.raw_set("variant", ud).unwrap();
-            let result = gts_exp.call::<_, ()>(()).unwrap();
+            assert!(gts_exp.call::<_, ()>(()).is_ok());
 
             // Add your assertions here...
             Ok(())
@@ -240,73 +241,3 @@ mod tests {
         .unwrap();
     }
 }
-
-/*
-pub fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let lua = Lua::new();
-    register_variant(&lua).expect("error registering variant");
-
-    let mut header = bcf::Header::new();
-    header.push_record(r#"##contig=<ID=chr1,length=10000>"#.as_bytes());
-    header
-        .push_record(r#"##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">"#.as_bytes());
-    header.push_sample("NA12878".as_bytes());
-    header.push_sample("NA12879".as_bytes());
-    let mut vcf = bcf::Writer::from_stdout(&header, true, bcf::Format::Vcf).unwrap();
-    let mut record = vcf.empty_record();
-    let _ = record.set_rid(Some(vcf.header().name2rid(b"chr1").unwrap()));
-    record.set_pos(6);
-    record.set_id(b"rs1234")?;
-    let alleles = &[
-        bcf::record::GenotypeAllele::Unphased(0),
-        bcf::record::GenotypeAllele::Phased(1),
-        bcf::record::GenotypeAllele::Unphased(1),
-        bcf::record::GenotypeAllele::Unphased(1),
-    ];
-    record.push_genotypes(alleles)?;
-
-    let get_expression = r#"return variant.id"#;
-    let set_expression = r#"variant.id = 'rsabcd'"#;
-    let gts_expr = r#"local gts = variant.genotypes;
-    for i = 1, #gts do
-    print(gts[i])
-    print(gts[i][1], gts[i][2])
-    end
-    "#;
-    let get_exp = lua
-        .load(get_expression)
-        .set_name("get")
-        .into_function()
-        .unwrap();
-    let set_exp = lua
-        .load(set_expression)
-        .set_name("set")
-        .into_function()
-        .unwrap();
-    let gts_exp = lua.load(gts_expr).set_name("gts").into_function().unwrap();
-    let globals = lua.globals();
-    vcf.write(&record).unwrap();
-
-    lua.scope(|scope| {
-        let ud = scope.create_any_userdata_ref_mut(&mut record)?;
-        globals.raw_set("variant", ud)?;
-        let result = get_exp.call::<_, String>(())?;
-        eprintln!("result of getter: {}", result);
-
-        // error here with setting variant.id
-        let result = set_exp.call::<_, ()>(())?;
-        eprintln!("result of setter: {:?}", result);
-
-        let result = gts_exp.call::<_, ()>(())?;
-        eprintln!("result of gts: {:?}", result);
-
-        Ok(())
-    })
-    .expect("error in scope");
-
-    vcf.write(&record).unwrap();
-
-    Ok(())
-}
-
-*/
