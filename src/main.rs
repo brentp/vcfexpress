@@ -5,8 +5,8 @@ use env_logger;
 use mlua::Lua;
 use rust_htslib::bcf::{self, Read};
 
-use vcfexpr::genotypes::register_genotypes;
-use vcfexpr::variant::{register_variant, Variant};
+use vcfexpr::register;
+use vcfexpr::variant::Variant;
 
 use log::info;
 
@@ -34,6 +34,10 @@ pub enum Commands {
         /// template expression in luau: https://luau-lang.org/syntax#string-interpolation. e.g. '{variant.chrom}:{variant.pos}'
         #[arg(short, long)]
         template: Option<String>,
+
+        /// Lua code to run. Can contain functions that will be called by the expressions.
+        #[arg(short, long)]
+        lua: Vec<String>,
 
         /// optional output file. Default is stdout.
         #[arg(short, long)]
@@ -79,10 +83,23 @@ fn filter_main(
     path: String,
     expression: Vec<String>,
     template: Option<String>,
+    lua_code: Vec<String>,
     output: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
     let lua = Lua::new();
+
+    for path in lua_code {
+        //open the code file
+        let code = std::fs::read_to_string(&path)?;
+        match lua.load(&code).exec() {
+            Ok(_) => {}
+            Err(e) => {
+                log::error!("error in lua code: {}", e);
+                return Err(e.into());
+            }
+        }
+    }
 
     //  open the VCF or BCF file
     let mut reader = bcf::Reader::from_path(&path)?;
@@ -110,8 +127,7 @@ fn filter_main(
     };
 
     let globals = lua.globals();
-    register_variant(&lua)?;
-    register_genotypes(&lua)?;
+    register(&lua)?;
     let template = process_template(template, &lua);
 
     let exps: Vec<_> = expression
@@ -197,9 +213,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             path,
             expression,
             template,
+            lua: lua_code,
             output,
         }) => {
-            filter_main(path, expression, template, output)?;
+            filter_main(path, expression, template, lua_code, output)?;
         }
         None => {
             println!("No command provided");

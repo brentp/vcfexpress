@@ -40,6 +40,8 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
             Ok(())
         });
 
+        reg.add_field_method_get("start", |_, this: &Variant| Ok(this.0.pos()));
+        reg.add_field_method_get("stop", |_, this: &Variant| Ok(this.0.end()));
         reg.add_field_method_get("pos", |_, this: &Variant| Ok(this.0.pos()));
         reg.add_field_method_set("pos", |_, this: &mut Variant, val: i64| {
             this.0.set_pos(val as i64);
