@@ -35,7 +35,7 @@ pub enum Commands {
         #[arg(short, long)]
         template: Option<String>,
 
-        /// Lua code to run. Can contain functions that will be called by the expressions.
+        /// File(s) containing lua code to run. Can contain functions that will be called by the expressions.
         #[arg(short, long)]
         lua: Vec<String>,
 
