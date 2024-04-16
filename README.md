@@ -60,3 +60,9 @@ Options:
   -o, --output <OUTPUT>          optional output file. Default is stdout
   -h, --help                     Print help
 ```
+
+
+# TODO
+
+add a functional lib such as [Moses](https://github.com/Yonaba/Moses) or [Lume](https://github.com/rxi/lume) which have `map`/`filter` and other functions.
+(The user can add these on their own with `--lua`).

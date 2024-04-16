@@ -1,3 +1,4 @@
+use log::error;
 use mlua::prelude::LuaValue;
 use mlua::{AnyUserData, Lua, MetaMethod, UserDataFields, UserDataMethods, Value};
 use rust_htslib::bcf::{self};
@@ -85,9 +86,30 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
             }))
         });
         reg.add_field_method_set("REF", |_lua: &Lua, this: &mut Variant, val: String| {
-            let mut alleles = this.0.alleles();
-            alleles[0] = val.as_bytes();
-            Ok(())
+            let mut alleles = vec![val.as_bytes()];
+            let alt_alleles = this
+                .0
+                .alleles()
+                .iter()
+                .skip(1)
+                .map(|&a| a.to_owned())
+                .collect::<Vec<_>>();
+            alleles.extend(alt_alleles.iter().map(|a| &a[..]));
+
+            match this.0.set_alleles(&alleles) {
+                Ok(_) => Ok(()),
+                Err(e) => Err(mlua::Error::ExternalError(Arc::new(e))),
+            }
+        });
+        reg.add_field_method_set("ALT", |_lua: &Lua, this: &mut Variant, val: Vec<String>| {
+            let ref_allele = this.0.alleles()[0].to_owned();
+            let mut alleles = vec![&ref_allele[..]];
+            alleles.extend(val.iter().map(|a| a.as_bytes()));
+
+            match this.0.set_alleles(&alleles) {
+                Ok(_) => Ok(()),
+                Err(e) => Err(mlua::Error::ExternalError(Arc::new(e))),
+            }
         });
 
         reg.add_field_method_get("ALT", |lua: &Lua, this: &Variant| {
@@ -117,6 +139,16 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
             }
             Ok(Value::Nil)
         });
+        reg.add_field_method_set(
+            "FILTER",
+            |_lua, this: &mut Variant, filter: String| match this
+                .0
+                .set_filters(&[filter.as_bytes()])
+            {
+                Err(e) => Err(mlua::Error::ExternalError(Arc::new(e))),
+                Ok(_) => Ok(()),
+            },
+        );
 
         reg.add_method("format", |lua: &Lua, this: &Variant, format: String| {
             let fmt = this.0.format(format.as_bytes());
@@ -199,7 +231,10 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                 let mut info = this.0.info(key.as_bytes()); /* only need mut for .flag */
                 let typ = this.0.header().info_type(key.as_bytes());
                 let (typ, num) = match typ {
-                    Err(e) => return Err(mlua::Error::ExternalError(Arc::new(e))),
+                    Err(e) => {
+                        error!("info tag '{}' not found in VCF", key);
+                        return Err(mlua::Error::ExternalError(Arc::new(e)));
+                    }
                     Ok(typ) => typ,
                 };
                 return match typ {
@@ -284,4 +319,89 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
             },
         );
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mlua::Lua;
+
+    fn setup() -> (Lua, Variant) {
+        let lua = Lua::new();
+        register_variant(&lua).expect("error registering variant");
+
+        let mut header = bcf::Header::new();
+        header.push_record(r#"##contig=<ID=chr1,length=10000>"#.as_bytes());
+        header.push_record(
+            r#"##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">"#.as_bytes(),
+        );
+        header.push_record(r#"##FILTER=<ID=PASS,Description="All filters passed">"#.as_bytes());
+        header.push_record(
+            r#"##INFO=<ID=DP,Number=1,Type=Integer,Description="Total Depth">"#.as_bytes(),
+        );
+        header.push_sample("NA12878".as_bytes());
+        header.push_sample("NA12879".as_bytes());
+        let vcf = bcf::Writer::from_path("_test.vcf", &header, true, bcf::Format::Vcf).unwrap();
+        let mut record = vcf.empty_record();
+        let _ = record.set_rid(Some(vcf.header().name2rid(b"chr1").unwrap()));
+        record.set_pos(6);
+        record.set_alleles(&[b"A", b"AT"]).unwrap();
+        record.set_id(b"rs1234").unwrap();
+        record.set_filters(&["PASS".as_bytes()]).unwrap();
+        record.push_info_integer(b"DP", &[10]).unwrap();
+        let alleles = &[
+            bcf::record::GenotypeAllele::Unphased(0),
+            bcf::record::GenotypeAllele::Phased(1),
+            bcf::record::GenotypeAllele::Unphased(1),
+            bcf::record::GenotypeAllele::Unphased(1),
+        ];
+        record.push_genotypes(alleles).unwrap();
+
+        (lua, Variant::new(record))
+    }
+
+    #[test]
+    fn test_lua_expressions() {
+        let (lua, mut record) = setup();
+        let globals = lua.globals();
+
+        let expressions = vec![
+            (r#"return variant.id"#, "rs1234"),
+            (r#"variant.id = 'rsabc'; return variant.id"#, "rsabc"),
+            (r#"return variant.REF"#, "A"),
+            (r#"variant.REF = 'T'; return variant.REF"#, "T"),
+            (r#"variant.ALT = {'A', 'G'}; return variant.REF"#, "T"),
+            (r#"return variant.ALT[1]"#, "A"),
+            (r#"return variant.ALT[2]"#, "G"),
+            (r#"return variant.FILTER"#, "PASS"),
+            // NOTE that we can get an integer, with 10, but we're testing
+            // all strings here and verifying that the auto conversion works.
+            (r#"return variant:info("DP")"#, "10"),
+            // Add more expressions and expected results here...
+        ];
+
+        lua.scope(|scope| {
+            let ud = scope.create_any_userdata_ref_mut(&mut record).unwrap();
+            globals.raw_set("variant", ud).unwrap();
+
+            for (expression, expected_result) in expressions {
+                let exp = lua
+                    .load(expression)
+                    .set_name("expression")
+                    .into_function()
+                    .unwrap();
+                let result: String = exp.call(()).unwrap();
+
+                if result != expected_result {
+                    eprintln!(
+                        "expression '{}' returned '{}', expected '{}'",
+                        expression, result, expected_result
+                    );
+                    assert_eq!(result, expected_result);
+                }
+            }
+            Ok(())
+        })
+        .unwrap();
+    }
 }

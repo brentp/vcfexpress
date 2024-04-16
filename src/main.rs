@@ -89,9 +89,8 @@ fn filter_main(
     let lua = Lua::new();
 
     for path in lua_code {
-        //open the code file
         let code = std::fs::read_to_string(&path)?;
-        match lua.load(&code).exec() {
+        match lua.load(&code).set_name(path).exec() {
             Ok(_) => {}
             Err(e) => {
                 log::error!("error in lua code: {}", e);
