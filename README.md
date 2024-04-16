@@ -2,8 +2,8 @@
 
 [![Rust](https://github.com/brentp/vcfexpr/actions/workflows/rust.yml/badge.svg)](https://github.com/brentp/vcfexpr/actions/workflows/rust.yml)
 
-This is an experiment to on how to implement user-expressions
-that can modify and filter a VCF and specify an output template.
+This is an experiment on how to implement user-expressions
+that can filter (and soon modify) a VCF and specify an output template.
 It uses lua as the expression language. It is fast.
 
 For the optional output template, it uses [luau string templates](https://luau-lang.org/syntax#string-interpolation)
@@ -15,7 +15,7 @@ where luau is lua with some extensions and very good speed.
 extract a single variant and output a bed of the variant:
 ```
 vcfexpr filter -e "return variant.id == 'rs2124717267'" \
-    -t '{variant.chrom}\t{variant.start}\t{variant.stop}' -o var.bed $vcf
+    --template '{variant.chrom}\t{variant.start}\t{variant.stop}' -o var.bed $vcf
 ```
 ---
 filter based on INFO and write bcf:

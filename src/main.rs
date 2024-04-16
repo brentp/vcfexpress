@@ -1,7 +1,6 @@
 use clap::{Parser, Subcommand};
 use std::io::Write;
 
-use env_logger;
 use mlua::Lua;
 use rust_htslib::bcf::{self, Read};
 
@@ -102,7 +101,7 @@ fn filter_main(
     }
 
     //  open the VCF or BCF file
-    let mut reader = bcf::Reader::from_path(&path)?;
+    let mut reader = bcf::Reader::from_path(path)?;
     _ = reader.set_threads(2);
     // create a new header from the reader
     let header = bcf::Header::from_template(reader.header());
@@ -117,13 +116,11 @@ fn filter_main(
         } else {
             bcf::Writer::from_stdout(&header, true, bcf::Format::Vcf)?
         })
+    } else if output.is_none() || output.as_ref().unwrap() == "-" {
+        EitherWriter::Stdout(std::io::BufWriter::new(std::io::stdout()))
     } else {
-        if output.is_none() || output.as_ref().unwrap() == "-" {
-            EitherWriter::Stdout(std::io::BufWriter::new(std::io::stdout()))
-        } else {
-            let file = std::fs::File::create(output.unwrap())?;
-            EitherWriter::File(std::io::BufWriter::new(file))
-        }
+        let file = std::fs::File::create(output.unwrap())?;
+        EitherWriter::File(std::io::BufWriter::new(file))
     };
 
     let globals = lua.globals();
@@ -187,7 +184,7 @@ fn check_variant(
                                     writeln!(w, "{}", result).expect("error writing variant");
                                 }
                             },
-                            Err(e) => return Err(e.into()),
+                            Err(e) => return Err(e),
                         }
                     } else {
                         match writer {
@@ -199,7 +196,7 @@ fn check_variant(
                     }
                     return Ok(true);
                 }
-                Err(e) => return Err(e.into()),
+                Err(e) => return Err(e),
             }
         }
         Ok(false)

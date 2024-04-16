@@ -27,7 +27,7 @@ impl UserData for Genotypes {}
 use std::fmt;
 impl fmt::Display for Genotype {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let &Genotype(ref alleles) = self;
+        let Genotype(alleles) = self;
         write!(f, "{}", alleles[0].0)?;
         for allele in alleles[1..].iter() {
             let allele = allele.0;

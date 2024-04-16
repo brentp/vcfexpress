@@ -44,7 +44,7 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
         reg.add_field_method_get("stop", |_, this: &Variant| Ok(this.0.end()));
         reg.add_field_method_get("pos", |_, this: &Variant| Ok(this.0.pos()));
         reg.add_field_method_set("pos", |_, this: &mut Variant, val: i64| {
-            this.0.set_pos(val as i64);
+            this.0.set_pos(val);
             Ok(())
         });
         reg.add_field_method_get("filters", |lua: &Lua, this: &Variant| {
@@ -59,10 +59,7 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
         });
         reg.add_field_method_set(
             "filters",
-            |_, this: &mut Variant, filter: String| match this
-                .0
-                .set_filters(&vec![filter.as_bytes()])
-            {
+            |_, this: &mut Variant, filter: String| match this.0.set_filters(&[filter.as_bytes()]) {
                 Err(e) => Err(mlua::Error::ExternalError(Arc::new(e))),
                 Ok(_) => Ok(()),
             },
@@ -114,11 +111,11 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
         reg.add_field_method_get("FILTER", |lua: &Lua, this: &Variant| {
             let f = this.0.filters();
             let h = this.0.header();
-            for id in f.into_iter() {
-                let filter = unsafe { String::from_utf8_unchecked(h.id_to_name(id)) };
+            if let Some(filter) = f.into_iter().next() {
+                let filter = unsafe { String::from_utf8_unchecked(h.id_to_name(filter)) };
                 return Ok(Value::String(lua.create_string(&filter)?));
             }
-            return Ok(Value::Nil);
+            Ok(Value::Nil)
         });
 
         reg.add_method("format", |lua: &Lua, this: &Variant, format: String| {
@@ -214,7 +211,7 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                                     Ok::<LuaValue<'_>, mlua::Error>(Value::Integer(v[0]))
                                 }
                                 (_, Some(i)) => {
-                                    Ok::<LuaValue<'_>, mlua::Error>(Value::Integer(v[i as usize]))
+                                    Ok::<LuaValue<'_>, mlua::Error>(Value::Integer(v[i]))
                                 }
 
                                 _ => {
@@ -235,9 +232,9 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                                 (bcf::header::TagLength::Fixed(1), None) => {
                                     Ok::<LuaValue<'_>, mlua::Error>(Value::Number(v[0] as f64))
                                 }
-                                (_, Some(i)) => Ok::<LuaValue<'_>, mlua::Error>(Value::Number(
-                                    v[i as usize] as f64,
-                                )),
+                                (_, Some(i)) => {
+                                    Ok::<LuaValue<'_>, mlua::Error>(Value::Number(v[i] as f64))
+                                }
                                 _ => {
                                     let t = lua.create_table().expect("error creating table");
                                     for (i, val) in v.iter().enumerate() {
@@ -262,7 +259,7 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                                 }
                                 (_, Some(i)) => Ok::<LuaValue<'_>, mlua::Error>(Value::String(
                                     lua.create_string(unsafe {
-                                        String::from_utf8_unchecked(v[i as usize].to_vec())
+                                        String::from_utf8_unchecked(v[i].to_vec())
                                     })?,
                                 )),
                                 _ => {
