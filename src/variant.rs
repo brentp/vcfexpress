@@ -318,6 +318,81 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                 };
             },
         );
+        reg.add_method(
+            "sample",
+            |lua: &Lua, this: &Variant, sample_name: String| {
+                let sample_id = match this.0.header().sample_id(sample_name.as_bytes()) {
+                    Some(id) => id,
+                    None => {
+                        let msg = format!("sample '{}' not found in VCF", sample_name);
+                        return Err(mlua::Error::RuntimeError(msg));
+                    }
+                };
+                // get all format fields for this sample.
+                let sample = lua.create_table().expect("error creating table");
+
+                this.0.header().header_records().iter().for_each(|r| {
+                    if let bcf::header::HeaderRecord::Format { key: _, values } = r {
+                        let tag = &values["ID"];
+                        let tag_bytes = tag.as_bytes();
+                        let fmt = this.0.format(tag_bytes);
+                        let typ = this.0.header().format_type(tag_bytes);
+                        let (typ, num) = match typ {
+                            Err(e) => {
+                                error!("format tag '{}' error: {:?}", tag, e);
+                                return;
+                            }
+                            Ok(typ) => typ,
+                        };
+                        let value = match (typ, tag_bytes) {
+                            (bcf::header::TagType::Integer, _)
+                            | (bcf::header::TagType::String, b"GT") => fmt
+                                .integer()
+                                .map(|v| match num {
+                                    bcf::header::TagLength::Fixed(1) if tag_bytes != b"GT" => {
+                                        Value::Integer(v[sample_id][0])
+                                    }
+                                    _ => {
+                                        let t = lua.create_table().expect("error creating table");
+                                        for (i, val) in v[sample_id].iter().enumerate() {
+                                            t.raw_set(i + 1, *val).expect("error setting value");
+                                        }
+                                        Value::Table(t)
+                                    }
+                                })
+                                .map_err(|e| mlua::Error::ExternalError(Arc::new(e))),
+                            _ => {
+                                eprintln!("unimplemented! format type {:?} for {}", typ, tag);
+                                Ok(Value::Nil)
+                            }
+                        };
+                        if tag_bytes == b"GT" {
+                            let gt = match value {
+                                Ok(Value::Table(ref t)) => t,
+                                _ => return,
+                            };
+                            let mut phases = vec![];
+                            for i in 1..=gt.len().expect("error getting GT length") {
+                                let allele = gt.get::<_, i64>(i).expect("error getting allele");
+                                phases.push(allele & 1 == 1);
+                                gt.raw_set(i, (allele >> 1) - 1)
+                                    .expect("error setting value in GT table");
+                            }
+                            sample
+                                .raw_set("phase", phases)
+                                .expect("error setting genotype phases");
+                        }
+                        match value {
+                            Ok(val) => sample
+                                .raw_set(tag.to_string(), val)
+                                .expect("error setting value"),
+                            Err(e) => error!("error reading format tag {}: {}", tag, e),
+                        }
+                    }
+                });
+                Ok(sample)
+            },
+        );
     })
 }
 
@@ -377,6 +452,14 @@ mod tests {
             // NOTE that we can get an integer, with 10, but we're testing
             // all strings here and verifying that the auto conversion works.
             (r#"return variant:info("DP")"#, "10"),
+            // sample is 0|1 and indexing is 1-based
+            (r#"s=variant:sample('NA12878'); return s.GT[1]"#, "0"),
+            (r#"s=variant:sample('NA12878'); return s.GT[2]"#, "1"),
+            // 2nd allele is phased to the first.
+            (
+                r#"s=variant:sample('NA12878'); return tostring(s.phase[2])"#,
+                "true",
+            ),
             // Add more expressions and expected results here...
         ];
 
@@ -387,7 +470,7 @@ mod tests {
             for (expression, expected_result) in expressions {
                 let exp = lua
                     .load(expression)
-                    .set_name("expression")
+                    .set_name(expression)
                     .into_function()
                     .unwrap();
                 let result: String = exp.call(()).unwrap();

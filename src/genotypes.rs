@@ -52,6 +52,7 @@ pub fn register_genotypes(lua: &Lua) -> mlua::Result<()> {
         reg.add_meta_function(
             MetaMethod::Index,
             |_lua, (this, idx): (AnyUserData, usize)| {
+                eprintln!("indexing genotype: {:?}", idx);
                 let gts = this.borrow::<Genotype>()?;
                 gts.0
                     .get(idx - 1)
@@ -222,10 +223,12 @@ mod tests {
     fn test_gts_expression() {
         let (lua, mut record) = setup();
         let gts_expr = r#"local gts = variant.genotypes; 
-        for i = 1, #gts do 
-        print("printing from lua:", gts[i]) 
-        print(gts[i][1], gts[i][2]) 
-        end
+        --for i = 1, #gts do 
+        --print("printing from lua:", gts[i], "type:", type(i) )
+        --print(gts[i][1], gts[i][2]) 
+        --end
+        local i = 2
+        return gts[i]:tostring()
         "#;
         let gts_exp = lua.load(gts_expr).set_name("gts").into_function().unwrap();
         let globals = lua.globals();
@@ -233,7 +236,11 @@ mod tests {
         lua.scope(|scope| {
             let ud = scope.create_any_userdata_ref_mut(&mut record).unwrap();
             globals.raw_set("variant", ud).unwrap();
-            assert!(gts_exp.call::<_, ()>(()).is_ok());
+            let gtstring = gts_exp.call::<_, String>(());
+            eprintln!("{:?}", gtstring);
+            assert!(gtstring.is_ok());
+            let gtstring = gtstring.unwrap();
+            assert_eq!(gtstring, "0|1".to_string());
 
             // Add your assertions here...
             Ok(())

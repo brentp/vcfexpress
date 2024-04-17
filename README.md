@@ -42,6 +42,19 @@ function all(t, f)
     end
 return true
 ```
+---
+
+get all of the FORMAT fields for a single sample into a lua table.
+find variant that are high-quality hom-alts.
+
+```
+vcfexpr filter \
+   -e 's=variant:sample("NA12878"); return s.DP > 10 and s.GQ > 20 and s.GT[1] == 1 and s.GT[2] == 1' \
+   -o output.bcf \
+   input.vcf
+``` 
+
+  
 
 # Usage
 
