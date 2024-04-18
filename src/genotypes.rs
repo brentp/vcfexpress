@@ -1,5 +1,5 @@
 use mlua::prelude::LuaValue;
-use mlua::{AnyUserData, Lua, MetaMethod, UserData, UserDataFields, UserDataMethods};
+use mlua::{AnyUserData, Lua, MetaMethod, UserData, UserDataFields, UserDataMethods, Value};
 use parking_lot::Mutex;
 use rust_htslib::bcf;
 use rust_htslib::bcf::record::{self, GenotypeAllele};
@@ -68,6 +68,19 @@ pub fn register_genotypes(lua: &Lua) -> mlua::Result<()> {
     lua.register_userdata_type::<GTAllele>(|reg| {
         reg.add_meta_function(MetaMethod::ToString, |_lua, this: AnyUserData| {
             Ok(this.borrow::<GTAllele>()?.0.to_string())
+        });
+        reg.add_field_method_get("phased", |_lua, this: &GTAllele| {
+            Ok(match this.0 {
+                GenotypeAllele::Phased(_) | GenotypeAllele::PhasedMissing => true,
+                GenotypeAllele::Unphased(_) | GenotypeAllele::UnphasedMissing => false,
+            })
+        });
+        reg.add_field_method_get("allele", |_lua, this: &GTAllele| {
+            Ok(match this.0 {
+                GenotypeAllele::Phased(i) => Value::Integer(i),
+                GenotypeAllele::Unphased(i) => Value::Integer(i),
+                _ => Value::Nil,
+            })
         });
     })?;
     lua.register_userdata_type::<Genotypes>(|reg| {
