@@ -1,6 +1,7 @@
 use log::error;
 use mlua::prelude::LuaValue;
 use mlua::{AnyUserData, Lua, MetaMethod, UserDataFields, UserDataMethods, Value};
+use parking_lot::Mutex;
 use rust_htslib::bcf::{self};
 use std::sync::Arc;
 
@@ -149,6 +150,18 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                 Ok(_) => Ok(()),
             },
         );
+        reg.add_field_method_get("genotypes", |_lua: &Lua, this: &Variant| {
+            let genotypes = this.0.format(b"GT");
+            match genotypes.integer() {
+                Ok(genotypes) => {
+                    let sb = crate::genotypes::Genotypes(Arc::new(Mutex::new(
+                        crate::genotypes::I32Buffer(genotypes),
+                    )));
+                    Ok(sb)
+                }
+                Err(e) => Err(mlua::Error::RuntimeError(e.to_string())),
+            }
+        });
 
         reg.add_method("format", |lua: &Lua, this: &Variant, format: String| {
             let fmt = this.0.format(format.as_bytes());

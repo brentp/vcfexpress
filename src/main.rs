@@ -212,8 +212,8 @@ fn filter_main(
         EitherWriter::File(std::io::BufWriter::new(file))
     };
 
-    let globals = lua.globals();
     register(&lua)?;
+    let globals = lua.globals();
     let template = process_template(template, &lua);
 
     let exps: Vec<_> = expression

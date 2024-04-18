@@ -1,16 +1,17 @@
-use mlua::prelude::LuaValue;
 use mlua::{AnyUserData, Lua, MetaMethod, UserData, UserDataFields, UserDataMethods, Value};
 use parking_lot::Mutex;
 use rust_htslib::bcf;
 use rust_htslib::bcf::record::{self, GenotypeAllele};
 use std::sync::Arc;
 
-struct I32Buffer(bcf::record::BufferBacked<'static, Vec<&'static [i32]>, record::Buffer>);
+pub(crate) struct I32Buffer(
+    pub(crate) bcf::record::BufferBacked<'static, Vec<&'static [i32]>, record::Buffer>,
+);
 
 struct GTAllele(bcf::record::GenotypeAllele);
 struct Genotype(Vec<GTAllele>);
 
-struct Genotypes(Arc<Mutex<I32Buffer>>);
+pub(crate) struct Genotypes(pub(crate) Arc<Mutex<I32Buffer>>);
 
 impl std::fmt::Debug for GTAllele {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -46,6 +47,29 @@ pub fn register_genotypes(lua: &Lua) -> mlua::Result<()> {
         reg.add_meta_function(MetaMethod::ToString, |_lua, this: AnyUserData| {
             let gts = format!("{}", this.borrow::<Genotype>()?);
             Ok(gts)
+        });
+        reg.add_field_method_get("alts", |_lua, this: &Genotype| {
+            Ok(this
+                .0
+                .iter()
+                .map(|x| match x.0 {
+                    GenotypeAllele::Phased(i) => {
+                        if i != 0 {
+                            1
+                        } else {
+                            0
+                        }
+                    }
+                    GenotypeAllele::Unphased(i) => {
+                        if i != 0 {
+                            1
+                        } else {
+                            0
+                        }
+                    }
+                    _ => 0,
+                })
+                .sum::<i32>())
         });
 
         // index to get GTAllele
@@ -110,40 +134,6 @@ pub fn register_genotypes(lua: &Lua) -> mlua::Result<()> {
         reg.add_meta_function(MetaMethod::Len, |_lua, this: AnyUserData| {
             let len = this.borrow::<Genotypes>()?.0.lock().0.len();
             Ok(len)
-        });
-    })?;
-    lua.register_userdata_type::<bcf::Record>(|reg| {
-        reg.add_meta_function(
-            MetaMethod::Index,
-            |_lua, (_, name): (AnyUserData, String)| {
-                let msg = format!("field '{:?}' variant.{:?} not found", name, name);
-                Err::<LuaValue<'_>, mlua::Error>(mlua::Error::RuntimeError(msg))
-            },
-        );
-        reg.add_field_method_get("id", |lua: &Lua, this: &bcf::Record| {
-            lua.create_string(this.id())
-        });
-
-        reg.add_field_method_set(
-            "id",
-            |_lua: &Lua, this: &mut bcf::Record, new_id: String| {
-                // Q: how can I make this work?
-                match this.set_id(new_id.as_bytes()) {
-                    Ok(_) => Ok(()),
-                    Err(e) => Err(mlua::Error::RuntimeError(e.to_string())),
-                }
-            },
-        );
-
-        reg.add_field_method_get("genotypes", |_lua: &Lua, this: &bcf::Record| {
-            let genotypes = this.format(b"GT");
-            match genotypes.integer() {
-                Ok(genotypes) => {
-                    let sb = Genotypes(Arc::new(Mutex::new(I32Buffer(genotypes))));
-                    Ok(sb)
-                }
-                Err(e) => Err(mlua::Error::RuntimeError(e.to_string())),
-            }
         });
     })
 }
