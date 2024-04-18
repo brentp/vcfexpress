@@ -54,6 +54,58 @@ vcfexpr filter \
    input.vcf
 ``` 
 
+# Attributes / Functions
+
+```lua
+variant.chrom -> string
+variant.REF (get/set) -> string
+variant.ALT (get/set) -> vec<string>
+variant.id (get/set) -> string
+variant.start -> integer
+variant.stop -> integer
+variant.pos (get/set) -> integer -- 0-based
+variant.qual (get/set) -> number
+variant.filters (get/set) -> vec<string>
+variant.FILTER (get/set) -> string (only first one reported)
+variant.genotypes -> vec<Genotype>
+variant:format("field_name") -> vec<string|number>
+-- optional 0-based 2nd arg to info() gets just the desired index.
+variant:info("field_name") -> number|string|bool|vec<number|string|bool> 
+-- useful to pprint(variant:sample("mysample")) to see available fields.
+variant:sample("sample_name") -> table<string=any> 
+
+genotypes = variant.genotypes
+genotype = genotypes[i] -- get single genotype for 1 sample
+tostring(genotype) -- e.g. "0/1"
+genotype.alts -- integer for number of non-zero, non-unknown alleles
+
+allele = genotype[1] 
+allele.phased -> bool
+allele.allele -> integer e.g. 0 for "0" allele
+
+sample = variant:sample("NA12878")
+sample.DP -- any fields in the row are available. special case for GT. use pprint to see structure:
+pprint(sample)
+--[[
+{  .GQ = 63,
+  .DP = 23,
+  .GT = {
+    [1] = 0,
+    [2] = 0},
+  .AD = {
+    [1] = 23,
+    [2] = 0},
+  .PL = {
+    [1] = 0,
+    [2] = 63,
+    [3] = 945},
+  .phase = {
+    [1] = false,
+    [2] = true}}
+--]]
+```
+
+
   
 
 # Usage
