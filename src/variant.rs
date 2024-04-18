@@ -1,4 +1,4 @@
-use log::error;
+use log::{error, info, warn};
 use mlua::prelude::LuaValue;
 use mlua::{AnyUserData, Lua, MetaMethod, UserDataFields, UserDataMethods, Value};
 use parking_lot::Mutex;
@@ -13,6 +13,9 @@ impl Variant {
     }
     pub fn record(&self) -> &bcf::Record {
         &self.0
+    }
+    pub fn header(&self) -> &bcf::header::HeaderView {
+        self.0.header()
     }
 }
 
@@ -374,10 +377,22 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                                     }
                                 })
                                 .map_err(|e| mlua::Error::ExternalError(Arc::new(e))),
-                            _ => {
-                                eprintln!("unimplemented! format type {:?} for {}", typ, tag);
-                                Ok(Value::Nil)
-                            }
+                            (bcf::header::TagType::String, _) => fmt
+                                .string()
+                                .map(|v| match num {
+                                    bcf::header::TagLength::Fixed(1) => Value::String(
+                                        lua.create_string(unsafe {
+                                            String::from_utf8_unchecked(v[sample_id].to_vec())
+                                        })
+                                        .expect("error creating string"),
+                                    ),
+                                    _ => {
+                                        warn!("string format tag {} is not fixed length", tag);
+                                        Value::Nil
+                                    }
+                                })
+                                .map_err(|e| mlua::Error::ExternalError(Arc::new(e))),
+                            _ => Ok(Value::Nil),
                         };
                         if tag_bytes == b"GT" {
                             let gt = match value {
@@ -399,7 +414,7 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                             Ok(val) => sample
                                 .raw_set(tag.to_string(), val)
                                 .expect("error setting value"),
-                            Err(e) => error!("error reading format tag {}: {}", tag, e),
+                            Err(e) => info!("format tag {} not found. {}", tag, e),
                         }
                     }
                 });

@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+
 use std::io::Write;
 
 use mlua::Lua;
@@ -21,7 +22,7 @@ struct Cli {
 #[derive(Subcommand)]
 pub enum Commands {
     /// Filter the VCF or BCF file and optionally apply a template.
-    /// If no template is given the output will be VCF/BCF (TODO)
+    /// If no template is given the output will be VCF/BCF
     Filter {
         /// Path to input VCF or BCF file
         path: String,
@@ -228,8 +229,21 @@ fn filter_main(
 
     let mut passing = 0;
 
-    for variant in reader.records() {
-        let mut variant = Variant::new(variant?);
+    // global set the header
+
+    //for variant in reader.records() {
+
+    loop {
+        let mut variant = reader.empty_record();
+        match reader.read(&mut variant) {
+            Some(Ok(_)) => {}
+            Some(Err(e)) => return Err(e.into()),
+            None => break,
+        }
+        if let EitherWriter::Vcf(ref mut w) = writer {
+            w.translate(&mut variant);
+        }
+        let mut variant = Variant::new(variant);
         match check_variant(&lua, &mut variant, &exps, &template, &globals, &mut writer) {
             Ok(true) => {
                 passing += 1;
@@ -251,8 +265,9 @@ fn check_variant(
     writer: &mut EitherWriter,
 ) -> mlua::Result<bool> {
     lua.scope(|scope| {
-        let ud = scope.create_any_userdata_ref(variant)?;
-        globals.raw_set("variant", ud)?;
+        // TODO: ref_mut to allow setting.
+        globals.raw_set("variant", scope.create_any_userdata_ref(variant)?)?;
+        globals.raw_set("header", scope.create_any_userdata_ref(variant.header())?)?;
 
         for exp in exps {
             let result = exp.call::<_, bool>(());

@@ -83,6 +83,9 @@ allele = genotype[1]
 allele.phased -> bool
 allele.allele -> integer e.g. 0 for "0" allele
 
+header.samples (set/get) -> vec<string> -- TODO: allow setting samples before iteration.
+
+
 sample = variant:sample("NA12878")
 sample.DP -- any fields in the row are available. special case for GT. use pprint to see structure:
 pprint(sample)
@@ -130,6 +133,8 @@ Options:
 
 # TODO
 
++ add a --prelude with code to run before any variants are written. for example set the samples.
++ add a `writer` so user can do, e.g. `writer:write(variant)`
 + add a functional lib such as [Moses](https://github.com/Yonaba/Moses) or [Lume](https://github.com/rxi/lume) which have `map`/`filter` and other functions.
   (The user can add these on their own with `--lua`).
 + write a class to simplify accessing CSQ fields.
