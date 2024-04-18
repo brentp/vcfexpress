@@ -89,9 +89,9 @@ pprint(sample)
 --[[
 {  .GQ = 63,
   .DP = 23,
-  .GT = {
+  .GT = { -- GT gives index into alt alles (or -1 for .)
     [1] = 0,
-    [2] = 0},
+    [2] = 1},
   .AD = {
     [1] = 23,
     [2] = 0},
@@ -99,8 +99,9 @@ pprint(sample)
     [1] = 0,
     [2] = 63,
     [3] = 945},
-  .phase = {
-    [1] = false,
+  -- this is the genotype phase.  so with GT, this is 0|1
+  .phase = { 
+    [1] = false, 
     [2] = true}}
 --]]
 ```
@@ -111,7 +112,7 @@ pprint(sample)
 # Usage
 
 ```
-Filter the VCF or BCF file and optionally apply a template. If no template is given the output will be VCF/BCF (TODO)
+Filter the VCF or BCF file and optionally apply a template. If no template is given the output will be VCF/BCF
 
 Usage: vcfexpr filter [OPTIONS] <PATH>
 
@@ -129,5 +130,12 @@ Options:
 
 # TODO
 
-add a functional lib such as [Moses](https://github.com/Yonaba/Moses) or [Lume](https://github.com/rxi/lume) which have `map`/`filter` and other functions.
-(The user can add these on their own with `--lua`).
++ add a functional lib such as [Moses](https://github.com/Yonaba/Moses) or [Lume](https://github.com/rxi/lume) which have `map`/`filter` and other functions.
+  (The user can add these on their own with `--lua`).
++ write a class to simplify accessing CSQ fields.
++ write new fields with '$name|$type|$description|$number|$lua_expression`. for example:
+```
+   -n 'popmax_AF|Float|maximum allele frequency among chosen populations|1|math.max(variant:info("AF_afr"), variant:info("AF_ami"), \
+        variant:info("AF_amr"), variant:info("AF_ami"), variant:info("AF_eas"), variant:info("AF_nfe"), variant:info("AF_sas"))'
+```
+which would create a new field `popmax_AF=$expression` at each row (note that this would need to handle missing values)

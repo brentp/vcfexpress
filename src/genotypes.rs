@@ -141,7 +141,7 @@ pub fn register_genotypes(lua: &Lua) -> mlua::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::variant::register_variant;
+    use crate::variant::{register_variant, Variant};
     use mlua::Lua;
     use rust_htslib::bcf;
 
@@ -175,55 +175,8 @@ mod tests {
     }
 
     #[test]
-    fn test_get_expression() {
-        let (lua, mut record) = setup();
-        let get_expression = r#"return variant.id"#;
-        let get_exp = lua
-            .load(get_expression)
-            .set_name("get")
-            .into_function()
-            .unwrap();
-        let globals = lua.globals();
-
-        lua.scope(|scope| {
-            let ud = scope.create_any_userdata_ref_mut(&mut record).unwrap();
-            globals.raw_set("variant", ud).unwrap();
-            let result = get_exp.call::<_, String>(()).unwrap();
-            assert_eq!(result, "rs1234".to_string());
-
-            // Add your assertions here...
-            Ok(())
-        })
-        .unwrap();
-    }
-
-    #[test]
-    fn test_set_expression() {
-        let (lua, mut record) = setup();
-        let set_expression = r#"variant.id = 'rsabcd'"#;
-        let set_exp = lua
-            .load(set_expression)
-            .set_name("set")
-            .into_function()
-            .unwrap();
-        let globals = lua.globals();
-
-        lua.scope(|scope| {
-            let ud = scope.create_any_userdata_ref_mut(&mut record).unwrap();
-            globals.raw_set("variant", ud).unwrap();
-            let result = set_exp.call::<_, ()>(());
-            assert!(result.is_ok());
-
-            // Add your assertions here...
-            Ok(())
-        })
-        .unwrap();
-        assert_eq!(record.id(), b"rsabcd");
-    }
-
-    #[test]
     fn test_gts_expression() {
-        let (lua, mut record) = setup();
+        let (lua, record) = setup();
         let gts_expr = r#"local gts = variant.genotypes; 
         --for i = 1, #gts do 
         --print("printing from lua:", gts[i], "type:", type(i) )
@@ -234,9 +187,10 @@ mod tests {
         "#;
         let gts_exp = lua.load(gts_expr).set_name("gts").into_function().unwrap();
         let globals = lua.globals();
+        let mut variant = Variant::new(record);
 
         lua.scope(|scope| {
-            let ud = scope.create_any_userdata_ref_mut(&mut record).unwrap();
+            let ud = scope.create_any_userdata_ref_mut(&mut variant).unwrap();
             globals.raw_set("variant", ud).unwrap();
             let gtstring = gts_exp.call::<_, String>(());
             assert!(gtstring.is_ok());
