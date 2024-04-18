@@ -52,7 +52,6 @@ pub fn register_genotypes(lua: &Lua) -> mlua::Result<()> {
         reg.add_meta_function(
             MetaMethod::Index,
             |_lua, (this, idx): (AnyUserData, usize)| {
-                eprintln!("indexing genotype: {:?}", idx);
                 let gts = this.borrow::<Genotype>()?;
                 gts.0
                     .get(idx - 1)
@@ -227,8 +226,8 @@ mod tests {
         --print("printing from lua:", gts[i], "type:", type(i) )
         --print(gts[i][1], gts[i][2]) 
         --end
-        local i = 2
-        return gts[i]:tostring()
+        local i = 1
+        return tostring(gts[i])
         "#;
         let gts_exp = lua.load(gts_expr).set_name("gts").into_function().unwrap();
         let globals = lua.globals();
@@ -237,7 +236,6 @@ mod tests {
             let ud = scope.create_any_userdata_ref_mut(&mut record).unwrap();
             globals.raw_set("variant", ud).unwrap();
             let gtstring = gts_exp.call::<_, String>(());
-            eprintln!("{:?}", gtstring);
             assert!(gtstring.is_ok());
             let gtstring = gtstring.unwrap();
             assert_eq!(gtstring, "0|1".to_string());
