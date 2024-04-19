@@ -194,7 +194,10 @@ fn filter_main(
     let mut reader = bcf::Reader::from_path(path)?;
     _ = reader.set_threads(2);
     // create a new header from the reader
-    let header = bcf::Header::from_template(reader.header());
+    let header_t = unsafe { rust_htslib::htslib::bcf_hdr_dup(reader.header().inner) };
+
+    let mut hv = bcf::header::HeaderView::new(header_t);
+    let header = bcf::header::Header::from_template(&hv);
 
     let mut writer = if template.is_none() {
         EitherWriter::Vcf(if let Some(output) = output {
@@ -202,6 +205,8 @@ fn filter_main(
             let mut wtr =
                 bcf::Writer::from_path(&output, &header, !output.ends_with(".gz"), format)?;
             _ = wtr.set_threads(2);
+            let header_t = unsafe { rust_htslib::htslib::bcf_hdr_dup(reader.header().inner) };
+            hv = bcf::header::HeaderView::new(header_t);
             wtr
         } else {
             bcf::Writer::from_stdout(&header, true, bcf::Format::Vcf)?
@@ -229,10 +234,6 @@ fn filter_main(
 
     let mut passing = 0;
 
-    // global set the header
-
-    //for variant in reader.records() {
-
     loop {
         let mut variant = reader.empty_record();
         match reader.read(&mut variant) {
@@ -244,7 +245,15 @@ fn filter_main(
             w.translate(&mut variant);
         }
         let mut variant = Variant::new(variant);
-        match check_variant(&lua, &mut variant, &exps, &template, &globals, &mut writer) {
+        match check_variant(
+            &lua,
+            &mut variant,
+            &hv,
+            &exps,
+            &template,
+            &globals,
+            &mut writer,
+        ) {
             Ok(true) => {
                 passing += 1;
             }
@@ -256,55 +265,83 @@ fn filter_main(
     Ok(())
 }
 
+enum StringOrBool {
+    String(String),
+    Bool(bool),
+}
+
 fn check_variant(
     lua: &Lua,
     variant: &mut Variant,
+    header: &bcf::header::HeaderView,
     exps: &Vec<mlua::Function<'_>>,
     template: &Option<mlua::Function<'_>>,
     globals: &mlua::Table<'_>,
     writer: &mut EitherWriter,
 ) -> mlua::Result<bool> {
-    lua.scope(|scope| {
+    let mut any_expression_true: bool = false;
+    let result = lua.scope(|scope| {
         // TODO: ref_mut to allow setting.
-        globals.raw_set("variant", scope.create_any_userdata_ref(variant)?)?;
-        globals.raw_set("header", scope.create_any_userdata_ref(variant.header())?)?;
+        globals.raw_set("header", scope.create_any_userdata_ref(header)?)?;
+        globals.raw_set("variant", scope.create_any_userdata_ref_mut(variant)?)?;
 
         for exp in exps {
             let result = exp.call::<_, bool>(());
             match result {
-                Ok(false) => {}
-                Ok(true) => {
-                    if let Some(template) = template {
-                        let result = template.call::<_, String>(());
-                        match result {
-                            Ok(result) => match writer {
-                                EitherWriter::Vcf(w) => {
-                                    w.write(variant.record()).expect("error writing variant");
-                                }
-                                EitherWriter::File(w) => {
-                                    writeln!(w, "{}", result).expect("error writing variant");
-                                }
-                                EitherWriter::Stdout(w) => {
-                                    writeln!(w, "{}", result).expect("error writing variant");
-                                }
-                            },
-                            Err(e) => return Err(e),
-                        }
-                    } else {
-                        match writer {
-                            EitherWriter::Vcf(w) => {
-                                w.write(variant.record()).expect("error writing variant");
-                            }
-                            _ => panic!("expected VCF output file."),
-                        }
-                    }
-                    return Ok(true);
-                }
                 Err(e) => return Err(e),
+                Ok(true) => {
+                    any_expression_true = true;
+                    if let Some(template) = template {
+                        return match template.call::<_, String>(()) {
+                            Ok(s) => Ok(StringOrBool::String(s)),
+                            Err(e) => {
+                                log::error!("error in template: {}", e);
+                                Err(e)
+                            }
+                        };
+                    } else {
+                        return Ok(StringOrBool::Bool(true));
+                    }
+                }
+                Ok(false) => {}
             }
         }
-        Ok(false)
-    })
+        Ok(StringOrBool::Bool(false))
+    });
+
+    match result {
+        Err(e) => Err(e),
+        Ok(StringOrBool::Bool(false)) => Ok(false),
+        Ok(StringOrBool::Bool(true)) => {
+            match writer {
+                EitherWriter::Vcf(w) => {
+                    w.write(variant.record()).expect("error writing variant");
+                }
+                EitherWriter::File(_) | EitherWriter::Stdout(_) => {
+                    return Err(mlua::Error::RuntimeError(
+                        "File/Stdouput output not supported for variant".to_string(),
+                    ));
+                }
+            }
+            Ok(true)
+        }
+        Ok(StringOrBool::String(s)) => {
+            match writer {
+                EitherWriter::Vcf(_w) => {
+                    // return a new error with msg
+                    let msg = "VCF output not supported for template";
+                    return Err(mlua::Error::RuntimeError(msg.to_string()));
+                }
+                EitherWriter::File(w) => {
+                    writeln!(w, "{}", s).expect("error writing variant");
+                }
+                EitherWriter::Stdout(w) => {
+                    writeln!(w, "{}", s).expect("error writing variant");
+                }
+            };
+            Ok(true)
+        }
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
