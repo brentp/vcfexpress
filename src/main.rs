@@ -39,6 +39,10 @@ pub enum Commands {
         #[arg(short, long)]
         lua: Vec<String>,
 
+        /// File containing lua code to run once before any variants are processed.
+        #[arg(short = 'p', long)]
+        lua_prelude: Option<String>,
+
         /// optional output file. Default is stdout.
         #[arg(short, long)]
         output: Option<String>,
@@ -78,101 +82,12 @@ enum EitherWriter {
     File(std::io::BufWriter<std::fs::File>),
     Stdout(std::io::BufWriter<std::io::Stdout>),
 }
-
-// https://stackoverflow.com/a/42062321
-// by Alundaio
-// used under: https://creativecommons.org/licenses/by-sa/4.0/
-const PPRINT: &str = r#"
-function pprint(node)
-    local cache, stack, output = {},{},{}
-    local depth = 1
-    local output_str = "{"
-
-    while true do
-        local size = 0
-        for k,v in pairs(node) do
-            size = size + 1
-        end
-
-        local cur_index = 1
-        for k,v in pairs(node) do
-            if (cache[node] == nil) or (cur_index >= cache[node]) then
-
-                if (string.find(output_str,"}",output_str:len())) then
-                    output_str = output_str .. ",\n"
-                elseif not (string.find(output_str,"\n",output_str:len())) then
-                    if output_str:len() > 1 then
-                        output_str = output_str .. "\n"
-                    end
-                end
-
-                -- This is necessary for working with HUGE tables otherwise we run out of memory using concat on huge strings
-                table.insert(output,output_str)
-                output_str = ""
-
-                local key
-                if (type(k) == "number" or type(k) == "boolean") then
-                    key = "["..tostring(k).."]"
-                else
-                    key = "."..tostring(k)
-                end
-
-                if (type(v) == "number" or type(v) == "boolean") then
-                    output_str = output_str .. string.rep('  ',depth) .. key .. " = "..tostring(v)
-                elseif (type(v) == "table") then
-                    output_str = output_str .. string.rep('  ',depth) .. key .. " = {\n"
-                    table.insert(stack,node)
-                    table.insert(stack,v)
-                    cache[node] = cur_index+1
-                    break
-                else
-                    output_str = output_str .. string.rep('  ',depth) .. key .. " = '"..tostring(v).."'"
-                end
-
-                if (cur_index == size) then
-                    -- output_str = output_str .. "\n" .. string.rep('  ',depth-1) .. "}"
-                    output_str = output_str .. "}"
-                else
-                    output_str = output_str .. ","
-                end
-            else
-                -- close the table
-                if (cur_index == size) then
-                    -- output_str = output_str .. "\n" .. string.rep('  ',depth-1) .. "}"
-                    output_str = output_str .. "}"
-                end
-            end
-
-            cur_index = cur_index + 1
-        end
-
-        if (size == 0) then
-            -- output_str = output_str .. "\n" .. string.rep('  ',depth-1) .. "}"
-            output_str = output_str .. "}"
-        end
-
-        if (#stack > 0) then
-            node = stack[#stack]
-            stack[#stack] = nil
-            depth = cache[node] == nil and depth + 1 or depth - 1
-        else
-            break
-        end
-    end
-
-    -- This is necessary for working with HUGE tables otherwise we run out of memory using concat on huge strings
-    table.insert(output,output_str)
-    output_str = table.concat(output)
-
-    print(output_str)
-end
-        "#;
-
 fn filter_main(
     path: String,
     expression: Vec<String>,
     template: Option<String>,
     lua_code: Vec<String>,
+    lua_prelude: Option<String>,
     output: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
@@ -188,35 +103,17 @@ fn filter_main(
             }
         }
     }
-    lua.load(PPRINT).set_name("pprint").exec()?;
+    lua.load(vcfexpr::pprint::PPRINT)
+        .set_name("pprint")
+        .exec()?;
 
     //  open the VCF or BCF file
     let mut reader = bcf::Reader::from_path(path)?;
     _ = reader.set_threads(2);
     // create a new header from the reader
-    let header_t = unsafe { rust_htslib::htslib::bcf_hdr_dup(reader.header().inner) };
+    //let header_t = unsafe { rust_htslib::htslib::bcf_hdr_dup(reader.header().inner) };
 
-    let mut hv = bcf::header::HeaderView::new(header_t);
-    let header = bcf::header::Header::from_template(&hv);
-
-    let mut writer = if template.is_none() {
-        EitherWriter::Vcf(if let Some(output) = output {
-            let format = get_vcf_format(&output);
-            let mut wtr =
-                bcf::Writer::from_path(&output, &header, !output.ends_with(".gz"), format)?;
-            _ = wtr.set_threads(2);
-            let header_t = unsafe { rust_htslib::htslib::bcf_hdr_dup(reader.header().inner) };
-            hv = bcf::header::HeaderView::new(header_t);
-            wtr
-        } else {
-            bcf::Writer::from_stdout(&header, true, bcf::Format::Vcf)?
-        })
-    } else if output.is_none() || output.as_ref().unwrap() == "-" {
-        EitherWriter::Stdout(std::io::BufWriter::new(std::io::stdout()))
-    } else {
-        let file = std::fs::File::create(output.unwrap())?;
-        EitherWriter::File(std::io::BufWriter::new(file))
-    };
+    //let mut hv = bcf::header::HeaderView::new(header_t);
 
     register(&lua)?;
     let globals = lua.globals();
@@ -233,11 +130,45 @@ fn filter_main(
         .collect();
 
     let mut passing = 0;
+    let mut hv =
+        bcf::header::HeaderView::new(unsafe { rust_htslib::htslib::bcf_hdr_dup(reader.header().inner)});
+
+    if let Some(lua_code) = lua_prelude {
+        let code = std::fs::read_to_string(lua_code)?;
+        lua.scope(|scope| {
+            globals.raw_set("header", scope.create_any_userdata_ref_mut(&mut hv)?)?;
+            lua.load(&code).exec()
+        })?;
+    }
+    let header = bcf::header::Header::from_template(reader.header());
+
+    let mut writer = if template.is_none() {
+        EitherWriter::Vcf(if let Some(output) = output {
+            let format = get_vcf_format(&output);
+            let mut wtr =
+                bcf::Writer::from_path(&output, &header, !output.ends_with(".gz"), format)?;
+            _ = wtr.set_threads(2);
+            //let header_t = unsafe { rust_htslib::htslib::bcf_hdr_dup(reader.header().inner) };
+            //hv = bcf::header::HeaderView::new(header_t);
+            wtr
+        } else {
+            bcf::Writer::from_stdout(&header, true, bcf::Format::Vcf)?
+        })
+    } else if output.is_none() || output.as_ref().unwrap() == "-" {
+        EitherWriter::Stdout(std::io::BufWriter::new(std::io::stdout()))
+    } else {
+        let file = std::fs::File::create(output.unwrap())?;
+        EitherWriter::File(std::io::BufWriter::new(file))
+    };
+    let header_t = unsafe { rust_htslib::htslib::bcf_hdr_dup(reader.header().inner) };
+    let hv = bcf::header::HeaderView::new(header_t);
 
     loop {
         let mut variant = reader.empty_record();
         match reader.read(&mut variant) {
-            Some(Ok(_)) => {}
+            Some(Ok(_)) => {} //unsafe {
+                //_ = rust_htslib::htslib::bcf_subset_format(hv.inner, variant.inner)
+            //},
             Some(Err(e)) => return Err(e.into()),
             None => break,
         }
@@ -352,9 +283,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             expression,
             template,
             lua: lua_code,
+            lua_prelude,
             output,
         }) => {
-            filter_main(path, expression, template, lua_code, output)?;
+            filter_main(path, expression, template, lua_code, lua_prelude, output)?;
         }
         None => {
             println!("No command provided");

@@ -3,7 +3,7 @@
 [![Rust](https://github.com/brentp/vcfexpr/actions/workflows/rust.yml/badge.svg)](https://github.com/brentp/vcfexpr/actions/workflows/rust.yml)
 
 This is an experiment on how to implement user-expressions
-that can filter (and soon modify) a VCF and specify an output template.
+that can filter (and modify) a VCF and specify an output template.
 It uses lua as the expression language. It is fast.
 
 For the optional output template, it uses [luau string templates](https://luau-lang.org/syntax#string-interpolation)

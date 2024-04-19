@@ -1,6 +1,7 @@
 pub mod genotypes;
 //pub mod sample;
 pub mod header;
+pub mod pprint;
 pub mod variant;
 
 pub fn register(lua: &mlua::Lua) -> mlua::Result<()> {
