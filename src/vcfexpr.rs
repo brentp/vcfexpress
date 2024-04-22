@@ -64,21 +64,9 @@ impl<'lua> VCFExpr<'lua> {
         vcf_path: String,
         expression: Vec<String>,
         template: Option<String>,
-        lua_code: Vec<String>,
         lua_prelude: Option<String>,
         output: Option<String>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        for path in lua_code {
-            let code = std::fs::read_to_string(&path)?;
-            match lua.load(&code).set_name(&path).exec() {
-                Ok(_) => (),
-                Err(e) => {
-                    log::error!("Error loading Lua code from {}: {}", path, e);
-                    return Err(e.into());
-                }
-            }
-        }
-
         lua.load(crate::pprint::PPRINT).set_name("pprint").exec()?;
 
         let reader = match vcf_path.as_str() {
@@ -142,6 +130,20 @@ impl<'lua> VCFExpr<'lua> {
             variants_evaluated: 0,
             variants_passing: 0,
         })
+    }
+
+    /// Add lua code to the Lua interpreter. This code will be available to the expressions and the template.
+    /// These are not the variant expressions, but rather additional Lua code that can be used as a library.
+    pub fn add_lua_code(&mut self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let code = std::fs::read_to_string(path)?;
+        match self.lua.load(&code).set_name(path).exec() {
+            Ok(_) => (),
+            Err(e) => {
+                log::error!("Error loading Lua code from {}: {}", path, e);
+                return Err(e.into());
+            }
+        }
+        Ok(())
     }
 
     /// Return a reference to the bcf::Reader object.
