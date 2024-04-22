@@ -1,6 +1,5 @@
 use mlua::Lua;
 use rust_htslib::bcf::{self, Read};
-use std::cell::RefCell;
 use std::io::Write;
 
 use crate::variant::Variant;
@@ -16,9 +15,10 @@ pub struct VCFExpr<'lua> {
     variants_passing: usize,
 }
 
-pub enum StringOrBool {
+pub enum StringOrVariant {
     String(String),
-    Bool(bool),
+    Variant(Option<bcf::Record>),
+    None,
 }
 
 pub enum EitherWriter {
@@ -34,11 +34,16 @@ impl EitherWriter {
         }
     }
 
-    pub fn write(&mut self, record: &bcf::Record, sob: &StringOrBool) -> std::io::Result<()> {
+    pub fn write(&mut self, sob: &mut StringOrVariant) -> std::io::Result<()> {
         match sob {
-            StringOrBool::Bool(false) => Ok(()),
-            StringOrBool::Bool(true) => {
+            StringOrVariant::None => Ok(()),
+            StringOrVariant::Variant(None) => Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "expected VCF record got None",
+            )),
+            StringOrVariant::Variant(Some(ref mut record)) => {
                 if let EitherWriter::Vcf(ref mut wtr) = self {
+                    wtr.translate(record);
                     match wtr.write(record) {
                         Ok(_) => Ok(()),
                         Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
@@ -51,7 +56,7 @@ impl EitherWriter {
                     ))
                 }
             }
-            StringOrBool::String(s) => match self {
+            StringOrVariant::String(s) => match self {
                 EitherWriter::Vcf(ref mut _wtr) => Err(std::io::Error::new(
                     std::io::ErrorKind::Other,
                     "did not VCF writer with template",
@@ -193,7 +198,7 @@ impl<'lua> VCFExpr<'lua> {
         self.writer.take().expect("writer already taken")
     }
 
-    pub fn evaluate(&mut self, record: bcf::Record) -> std::io::Result<StringOrBool> {
+    pub fn evaluate(&mut self, record: bcf::Record) -> std::io::Result<StringOrVariant> {
         let mut variant = Variant::new(record);
         self.variants_evaluated += 1;
         let eval_result = self.lua.scope(|scope| {
@@ -215,24 +220,82 @@ impl<'lua> VCFExpr<'lua> {
                         if let Some(template) = &self.template {
                             // if we have a template, we want to evaluate it in this same scope.
                             return match template.call::<_, String>(()) {
-                                Ok(res) => Ok(StringOrBool::String(res)),
+                                Ok(res) => Ok(StringOrVariant::String(res)),
                                 Err(e) => {
                                     log::error!("Error in template: {}", e);
                                     return Err(e);
                                 }
                             };
                         }
-                        return Ok(StringOrBool::Bool(true));
+                        return Ok(StringOrVariant::Variant(None));
                     }
                     Ok(false) => {}
                 }
             }
 
-            Ok(StringOrBool::Bool(false))
+            Ok(StringOrVariant::None)
         });
         match eval_result {
+            Ok(StringOrVariant::Variant(None)) => {
+                Ok(StringOrVariant::Variant(Some(variant.take())))
+            }
             Ok(b) => Ok(b),
             Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mlua::Lua;
+
+    #[test]
+    fn test_process_template_with_none() {
+        let lua = Lua::new();
+        assert_eq!(process_template(None, &lua), None);
+    }
+
+    #[test]
+    fn test_process_template_with_backticks() {
+        let lua = Lua::new();
+        let template = Some("`print('Hello, World!')`".to_string());
+        let result = process_template(template, &lua);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_process_template_without_backticks() {
+        let lua = Lua::new();
+        let template = Some("print('Hello, World!')".to_string());
+        let result = process_template(template, &lua);
+        assert!(result.is_some());
+        // execute the result
+        let result = result.unwrap();
+        let result = result.call::<_, String>(());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_process_template_with_return() {
+        let lua = Lua::new();
+        let template = Some("return `42`".to_string());
+        let result = process_template(template, &lua);
+        assert!(result.is_some());
+        let result = result.unwrap();
+        let result = result.call::<_, i32>(());
+        if let Ok(result) = result {
+            assert_eq!(result, 42);
+        } else {
+            panic!("error in template");
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "error in template")]
+    fn test_process_template_with_invalid_lua() {
+        let lua = Lua::new();
+        let template = Some("return []invalid_lua_code".to_string());
+        process_template(template, &lua);
     }
 }

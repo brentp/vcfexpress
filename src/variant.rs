@@ -17,6 +17,9 @@ impl Variant {
     pub fn header(&self) -> &bcf::header::HeaderView {
         self.0.header()
     }
+    pub fn take(self) -> bcf::Record {
+        self.0
+    }
 }
 
 use log::{debug, log_enabled, Level};
