@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 
+use std::f32::consts::E;
 use std::io::Write;
 
 use mlua::Lua;
@@ -78,15 +79,15 @@ fn filter_main(
     for path in lua_code {
         vcfexpr.add_lua_code(&path)?;
     }
-    let reader = vcfexpr.reader();
+    let mut reader = vcfexpr.reader();
+    let mut writer = vcfexpr.writer();
 
     for record in reader.records() {
-        let record = record?;
-        vcfexpr.translate(&mut record);
+        let mut record = record?;
         let sob = vcfexpr.evaluate(record)?;
-        vcfexpr.write(&record, &sob)?;
+        writer.translate(&mut record);
+        writer.write(&record, &sob)?;
     }
-    //info!("passing variants: {}", vcfexpr.variants_passing);
     Ok(())
 }
 

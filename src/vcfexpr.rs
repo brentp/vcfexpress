@@ -1,14 +1,15 @@
 use mlua::Lua;
 use rust_htslib::bcf::{self, Read};
+use std::cell::RefCell;
 use std::io::Write;
 
 use crate::variant::Variant;
 
 pub struct VCFExpr<'lua> {
     lua: &'lua Lua,
-    vcf_reader: bcf::Reader,
+    vcf_reader: Option<bcf::Reader>,
     template: Option<mlua::Function<'lua>>,
-    writer: EitherWriter,
+    writer: Option<EitherWriter>,
     expressions: Vec<mlua::Function<'lua>>,
     globals: mlua::Table<'lua>,
     variants_evaluated: usize,
@@ -20,10 +21,46 @@ pub enum StringOrBool {
     Bool(bool),
 }
 
-enum EitherWriter {
+pub enum EitherWriter {
     Vcf(bcf::Writer),
     File(std::io::BufWriter<std::fs::File>),
     Stdout(std::io::BufWriter<std::io::Stdout>),
+}
+
+impl EitherWriter {
+    pub fn translate(&mut self, record: &mut bcf::Record) {
+        if let EitherWriter::Vcf(ref mut w) = self {
+            w.translate(record);
+        }
+    }
+
+    pub fn write(&mut self, record: &bcf::Record, sob: &StringOrBool) -> std::io::Result<()> {
+        match sob {
+            StringOrBool::Bool(false) => Ok(()),
+            StringOrBool::Bool(true) => {
+                if let EitherWriter::Vcf(ref mut wtr) = self {
+                    match wtr.write(record) {
+                        Ok(_) => Ok(()),
+                        Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
+                    }
+                } else {
+                    // error because we should not be writing a record to a file or stdout
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "expected VCF writer without template",
+                    ))
+                }
+            }
+            StringOrBool::String(s) => match self {
+                EitherWriter::Vcf(ref mut _wtr) => Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "did not VCF writer with template",
+                )),
+                EitherWriter::File(ref mut f) => writeln!(f, "{}", s),
+                EitherWriter::Stdout(ref mut f) => writeln!(f, "{}", s),
+            },
+        }
+    }
 }
 
 fn get_vcf_format(path: &str) -> bcf::Format {
@@ -123,9 +160,9 @@ impl<'lua> VCFExpr<'lua> {
 
         Ok(VCFExpr {
             lua,
-            vcf_reader: reader,
+            vcf_reader: Some(reader),
             template,
-            writer,
+            writer: Some(writer),
             expressions: exps,
             globals,
             variants_evaluated: 0,
@@ -148,14 +185,12 @@ impl<'lua> VCFExpr<'lua> {
     }
 
     /// Return a reference to the bcf::Reader object.
-    pub fn reader(&mut self) -> &mut bcf::Reader {
-        &mut self.vcf_reader
+    pub fn reader(&mut self) -> bcf::Reader {
+        self.vcf_reader.take().expect("reader already taken")
     }
 
-    pub fn translate(&mut self, record: &mut bcf::Record) {
-        if let EitherWriter::Vcf(ref mut w) = self.writer {
-            w.translate(record);
-        }
+    pub fn writer(&mut self) -> EitherWriter {
+        self.writer.take().expect("writer already taken")
     }
 
     pub fn evaluate(&mut self, record: bcf::Record) -> std::io::Result<StringOrBool> {
@@ -198,34 +233,6 @@ impl<'lua> VCFExpr<'lua> {
         match eval_result {
             Ok(b) => Ok(b),
             Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
-        }
-    }
-
-    pub fn write(&mut self, record: &bcf::Record, sob: &StringOrBool) -> std::io::Result<()> {
-        match sob {
-            StringOrBool::Bool(false) => Ok(()),
-            StringOrBool::Bool(true) => {
-                if let EitherWriter::Vcf(wtr) = &mut self.writer {
-                    match wtr.write(record) {
-                        Ok(_) => Ok(()),
-                        Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
-                    }
-                } else {
-                    // error because we should not be writing a record to a file or stdout
-                    Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        "expected VCF writer without template",
-                    ))
-                }
-            }
-            StringOrBool::String(s) => match &mut self.writer {
-                EitherWriter::Vcf(_wtr) => Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "did not VCF writer with template",
-                )),
-                EitherWriter::File(f) => writeln!(f, "{}", s),
-                EitherWriter::Stdout(f) => writeln!(f, "{}", s),
-            },
         }
     }
 }
