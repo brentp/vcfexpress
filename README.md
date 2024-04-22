@@ -123,11 +123,12 @@ Arguments:
   <PATH>  Path to input VCF or BCF file
 
 Options:
-  -e, --expression <EXPRESSION>  boolean Lua expression(s) to filter the VCF or BCF file
-  -t, --template <TEMPLATE>      template expression in luau: https://luau-lang.org/syntax#string-interpolation. e.g. '{variant.chrom}:{variant.pos}'
-  -l, --lua <LUA>                File(s) containing lua code to run. Can contain functions that will be called by the expressions
-  -o, --output <OUTPUT>          optional output file. Default is stdout
-  -h, --help                     Print help
+  -e, --expression <EXPRESSION>    boolean Lua expression(s) to filter the VCF or BCF file
+  -t, --template <TEMPLATE>        template expression in luau: https://luau-lang.org/syntax#string-interpolation. e.g. '{variant.chrom}:{variant.pos}'
+  -l, --lua <LUA>                  File(s) containing lua code to run. Can contain functions that will be called by the expressions
+  -p, --lua-prelude <LUA_PRELUDE>  File containing lua code to run once before any variants are processed
+  -o, --output <OUTPUT>            optional output file. Default is stdout
+  -h, --help                       Print help
 ```
 
 
