@@ -16,7 +16,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Filter the VCF or BCF file and optionally apply a template.
+    /// Filter a VCF/BCF and optionally print by template expression.
     /// If no template is given the output will be VCF/BCF
     Filter {
         /// Path to input VCF or BCF file
@@ -30,7 +30,7 @@ pub enum Commands {
         #[arg(short, long)]
         template: Option<String>,
 
-        /// File(s) containing lua code to run. Can contain functions that will be called by the expressions.
+        /// File(s) containing lua code to load. May contain functions that will be called by the expressions.
         #[arg(short, long)]
         lua: Vec<String>,
 
@@ -38,7 +38,7 @@ pub enum Commands {
         #[arg(short = 'p', long)]
         lua_prelude: Option<String>,
 
-        /// optional output file. Default is stdout.
+        /// Optional output file. Default is stdout.
         #[arg(short, long)]
         output: Option<String>,
     },
