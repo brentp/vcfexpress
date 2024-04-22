@@ -7,6 +7,7 @@ use rust_htslib::bcf::{self, Read};
 
 use vcfexpr::register;
 use vcfexpr::variant::Variant;
+use vcfexpr::vcfexpr::VCFExpr;
 
 use log::info;
 
@@ -49,26 +50,6 @@ pub enum Commands {
     },
 }
 
-fn process_template(template: Option<String>, lua: &Lua) -> Option<mlua::Function<'_>> {
-    if let Some(template) = template.as_ref() {
-        // check if template contains backticks
-        let return_pre = if template.contains("return ") {
-            ""
-        } else {
-            "return "
-        };
-        // add the backticks and return if needed.
-        let expr = if template.contains('`') {
-            format!("{}{}", return_pre, template)
-        } else {
-            format!("{} `{}`", return_pre, template)
-        };
-        Some(lua.load(expr).into_function().expect("error in template"))
-    } else {
-        None
-    }
-}
-
 fn get_vcf_format(path: &str) -> bcf::Format {
     if path.ends_with(".bcf") || path.ends_with(".bcf.gz") {
         bcf::Format::Bcf
@@ -93,106 +74,19 @@ fn filter_main(
     env_logger::init();
     let lua = Lua::new();
 
+    let mut vcfexpr = VCFExpr::new(&lua, path, expression, template, lua_prelude, output)?;
     for path in lua_code {
-        let code = std::fs::read_to_string(&path)?;
-        match lua.load(&code).set_name(path).exec() {
-            Ok(_) => {}
-            Err(e) => {
-                log::error!("error in lua code: {}", e);
-                return Err(e.into());
-            }
-        }
+        vcfexpr.add_lua_code(&path)?;
     }
-    lua.load(vcfexpr::pprint::PPRINT)
-        .set_name("pprint")
-        .exec()?;
+    let reader = vcfexpr.reader();
 
-    //  open the VCF or BCF file
-    let mut reader = bcf::Reader::from_path(path)?;
-    _ = reader.set_threads(2);
-    // create a new header from the reader
-    //let header_t = unsafe { rust_htslib::htslib::bcf_hdr_dup(reader.header().inner) };
-
-    //let mut hv = bcf::header::HeaderView::new(header_t);
-
-    register(&lua)?;
-    let globals = lua.globals();
-    let template = process_template(template, &lua);
-
-    let exps: Vec<_> = expression
-        .iter()
-        .map(|exp| {
-            lua.load(exp)
-                .set_name(exp)
-                .into_function()
-                .expect("error in expression")
-        })
-        .collect();
-
-    let mut passing = 0;
-    let mut hv =
-        bcf::header::HeaderView::new(unsafe { rust_htslib::htslib::bcf_hdr_dup(reader.header().inner)});
-
-    if let Some(lua_code) = lua_prelude {
-        let code = std::fs::read_to_string(lua_code)?;
-        lua.scope(|scope| {
-            globals.raw_set("header", scope.create_any_userdata_ref_mut(&mut hv)?)?;
-            lua.load(&code).exec()
-        })?;
+    for record in reader.records() {
+        let record = record?;
+        vcfexpr.translate(&mut record);
+        let sob = vcfexpr.evaluate(record)?;
+        vcfexpr.write(&record, &sob)?;
     }
-    let header = bcf::header::Header::from_template(reader.header());
-
-    let mut writer = if template.is_none() {
-        EitherWriter::Vcf(if let Some(output) = output {
-            let format = get_vcf_format(&output);
-            let mut wtr =
-                bcf::Writer::from_path(&output, &header, !output.ends_with(".gz"), format)?;
-            _ = wtr.set_threads(2);
-            //let header_t = unsafe { rust_htslib::htslib::bcf_hdr_dup(reader.header().inner) };
-            //hv = bcf::header::HeaderView::new(header_t);
-            wtr
-        } else {
-            bcf::Writer::from_stdout(&header, true, bcf::Format::Vcf)?
-        })
-    } else if output.is_none() || output.as_ref().unwrap() == "-" {
-        EitherWriter::Stdout(std::io::BufWriter::new(std::io::stdout()))
-    } else {
-        let file = std::fs::File::create(output.unwrap())?;
-        EitherWriter::File(std::io::BufWriter::new(file))
-    };
-    let header_t = unsafe { rust_htslib::htslib::bcf_hdr_dup(reader.header().inner) };
-    let hv = bcf::header::HeaderView::new(header_t);
-
-    loop {
-        let mut variant = reader.empty_record();
-        match reader.read(&mut variant) {
-            Some(Ok(_)) => {} //unsafe {
-                //_ = rust_htslib::htslib::bcf_subset_format(hv.inner, variant.inner)
-            //},
-            Some(Err(e)) => return Err(e.into()),
-            None => break,
-        }
-        if let EitherWriter::Vcf(ref mut w) = writer {
-            w.translate(&mut variant);
-        }
-        let mut variant = Variant::new(variant);
-        match check_variant(
-            &lua,
-            &mut variant,
-            &hv,
-            &exps,
-            &template,
-            &globals,
-            &mut writer,
-        ) {
-            Ok(true) => {
-                passing += 1;
-            }
-            Ok(false) => {}
-            Err(e) => return Err(e.into()),
-        }
-    }
-    info!("passing variants: {}", passing);
+    //info!("passing variants: {}", vcfexpr.variants_passing);
     Ok(())
 }
 

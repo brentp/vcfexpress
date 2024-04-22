@@ -69,10 +69,11 @@ impl<'lua> VCFExpr<'lua> {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         lua.load(crate::pprint::PPRINT).set_name("pprint").exec()?;
 
-        let reader = match vcf_path.as_str() {
+        let mut reader = match vcf_path.as_str() {
             "-" | "stdin" => bcf::Reader::from_stdin()?,
             _ => bcf::Reader::from_path(&vcf_path)?,
         };
+        _ = reader.set_threads(2);
         crate::register(lua)?;
         let globals = lua.globals();
         let template = process_template(template, lua);
@@ -149,6 +150,12 @@ impl<'lua> VCFExpr<'lua> {
     /// Return a reference to the bcf::Reader object.
     pub fn reader(&mut self) -> &mut bcf::Reader {
         &mut self.vcf_reader
+    }
+
+    pub fn translate(&mut self, record: &mut bcf::Record) {
+        if let EitherWriter::Vcf(ref mut w) = self.writer {
+            w.translate(record);
+        }
     }
 
     pub fn evaluate(&mut self, record: bcf::Record) -> std::io::Result<StringOrBool> {
