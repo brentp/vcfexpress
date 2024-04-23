@@ -142,7 +142,7 @@ impl<'lua> VCFExpr<'lua> {
             })?;
         }
 
-        let header = bcf::header::Header::from_template(reader.header());
+        let header = bcf::header::Header::from_template(&hv);
 
         let writer = if template.is_none() {
             EitherWriter::Vcf(if let Some(output) = output {

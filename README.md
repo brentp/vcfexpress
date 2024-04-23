@@ -134,12 +134,14 @@ Options:
 
 # TODO
 
-+ add a functional lib such as [Moses](https://github.com/Yonaba/Moses) or [Lume](https://github.com/rxi/lume) which have `map`/`filter` and other functions.
-  (The user can add these on their own with `--lua`).
-+ write a class to simplify accessing CSQ fields.
-+ write new fields with '$name|$type|$description|$number|$lua_expression`. for example:
++ set fields with --info-set '$name|$lua_expression`. for example:
 ```
-   -n 'popmax_AF|Float|maximum allele frequency among chosen populations|1|math.max(variant:info("AF_afr"), variant:info("AF_ami"), \
+   -n 'popmax_AF|math.max(variant:info("AF_afr"), variant:info("AF_ami"), \
         variant:info("AF_amr"), variant:info("AF_ami"), variant:info("AF_eas"), variant:info("AF_nfe"), variant:info("AF_sas"))'
 ```
 which would create a new field `popmax_AF=$expression` at each row (note that this would need to handle missing values)
+this would also use `header:add_info({Type="Float", Number=1, Description="max of subset of pops", ID="popmax_AF"})`
+
++ add a functional lib such as [Moses](https://github.com/Yonaba/Moses) or [Lume](https://github.com/rxi/lume) which have `map`/`filter` and other functions.
+  (The user can add these on their own with `--lua`).
++ write a class to simplify accessing CSQ fields.
