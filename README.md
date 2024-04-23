@@ -134,7 +134,6 @@ Options:
 
 # TODO
 
-+ allow `header.push_info_record({Description = "xxx", Type = "Integer", ID="newcol", Number="."})
 + add a functional lib such as [Moses](https://github.com/Yonaba/Moses) or [Lume](https://github.com/rxi/lume) which have `map`/`filter` and other functions.
   (The user can add these on their own with `--lua`).
 + write a class to simplify accessing CSQ fields.
