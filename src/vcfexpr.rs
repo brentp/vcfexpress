@@ -1,4 +1,3 @@
-use log::debug;
 use mlua::Lua;
 use rust_htslib::bcf::{
     self,
@@ -173,8 +172,6 @@ impl<'lua> VCFExpr<'lua> {
                 let mut wtr =
                     bcf::Writer::from_path(&output, &header, !output.ends_with(".gz"), format)?;
                 _ = wtr.set_threads(2);
-                //let header_t = unsafe { rust_htslib::htslib::bcf_hdr_dup(reader.header().inner) };
-                //hv = bcf::header::HeaderView::new(header_t);
                 wtr
             } else {
                 bcf::Writer::from_stdout(&header, true, bcf::Format::Vcf)?
@@ -216,7 +213,7 @@ impl<'lua> VCFExpr<'lua> {
                     .expect("invalid info expression should have name=$expression");
                 let t = hv
                     .info_type(name_exp.0.as_bytes())
-                    .unwrap_or_else(|_| panic!("info field {} not found", name_exp.0));
+                    .unwrap_or_else(|_| panic!("ERROR: info field '{}' not found. Make sure it was added to the header in prelude if needed.", name_exp.0));
                 (
                     InfoFormat::Info(name_exp.0.to_string()),
                     (
@@ -330,7 +327,7 @@ impl<'lua> VCFExpr<'lua> {
         let mut record = variant.take();
         for (stag, value) in info_results {
             let tag = stag.as_bytes();
-            debug!("Setting info field: {}: {:?}", stag, value);
+            //debug!("Setting info field: {}: {:?}", stag, value);
             let result = match value {
                 InfoFormatValue::Bool(b) => {
                     if b {
@@ -339,7 +336,7 @@ impl<'lua> VCFExpr<'lua> {
                         record.clear_info_flag(tag)
                     }
                 }
-                InfoFormatValue::Float(f) => record.push_info_float(tag, &[f]),
+                InfoFormatValue::Float(f) => record.push_info_float(b"af_copy", &[f]),
                 InfoFormatValue::Integer(i) => record.push_info_integer(tag, &[i]),
                 InfoFormatValue::String(s) => record.push_info_string(tag, &[s.as_bytes()]),
             };

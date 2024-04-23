@@ -10,15 +10,13 @@ fn handle_hash_get<'a>(
 ) -> Result<&'a str, mlua::Error> {
     match tbl.get(key) {
         Some(x) => Ok(x),
-        None => {
-            Err(mlua::Error::ExternalError(Arc::new(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                format!(
-                    "must specify {} in the argument to add_{}. got {:?}",
-                    key, func, tbl
-                ),
-            ))))
-        }
+        None => Err(mlua::Error::ExternalError(Arc::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!(
+                "must specify {} in the argument to add_{}. got {:?}",
+                key, func, tbl
+            ),
+        )))),
     }
 }
 
@@ -80,7 +78,7 @@ pub(crate) fn register_header(lua: &Lua) -> mlua::Result<()> {
             |_lua, (ud, tbl): (AnyUserData, HashMap<String, String>)| {
                 let this = ud.borrow_mut::<HeaderView>()?;
                 let c_str = std::ffi::CString::new(format!(
-                    r#"##INFO=<ID={},Number={},Type={},Description="{}">"#,
+                    r#"##INFO=<ID={},Number={},Type={},Description={}>"#,
                     handle_hash_get(&tbl, "ID", "info")?,
                     handle_hash_get(&tbl, "Number", "info")?,
                     handle_hash_get(&tbl, "Type", "info")?,
@@ -95,7 +93,14 @@ pub(crate) fn register_header(lua: &Lua) -> mlua::Result<()> {
                         std::io::Error::last_os_error(),
                     )));
                 }
-                _ = unsafe { rust_htslib::htslib::bcf_hdr_sync(this.inner) };
+                let ret = unsafe { rust_htslib::htslib::bcf_hdr_sync(this.inner) };
+                if ret != 0 {
+                    log::warn!(
+                        "Error syncing header after adding INFO field for {:?}: {}",
+                        tbl,
+                        ret
+                    );
+                }
                 Ok(())
             },
         );
@@ -199,7 +204,7 @@ mod tests {
                 scope.create_any_userdata_ref_mut(&mut header_view)?,
             )?;
             let result: String = exp.call(())?;
-            let expected = "##fileformat=VCFv4.2\n##FILTER=<ID=PASS,Description=\"All filters passed\">\n##contig=<ID=chr1,length=10000>\n##INFO=<ID=TEST,Number=1,Type=Integer,Description=\"Test field\">\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSample1\tSample2\n";
+            let expected = "##fileformat=VCFv4.2\n##FILTER=<ID=PASS,Description=\"All filters passed\">\n##contig=<ID=chr1,length=10000>\n##INFO=<ID=TEST,Number=1,Type=Integer,Description=Test field>\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSample1\tSample2\n";
             assert_eq!(
                 result,
                 expected,
