@@ -1,6 +1,11 @@
+use log::debug;
 use mlua::Lua;
-use rust_htslib::bcf::{self, Read};
-use std::io::Write;
+use rust_htslib::bcf::{
+    self,
+    header::{TagLength, TagType},
+    Read,
+};
+use std::{collections::HashMap, hash::Hash, io::Write};
 
 use crate::variant::Variant;
 
@@ -10,6 +15,7 @@ pub struct VCFExpr<'lua> {
     template: Option<mlua::Function<'lua>>,
     writer: Option<EitherWriter>,
     expressions: Vec<mlua::Function<'lua>>,
+    info_expressions: HashMap<InfoFormat, ((TagType, TagLength), mlua::Function<'lua>)>,
     globals: mlua::Table<'lua>,
     variants_evaluated: usize,
     variants_passing: usize,
@@ -43,7 +49,6 @@ impl EitherWriter {
             )),
             StringOrVariant::Variant(Some(ref mut record)) => {
                 if let EitherWriter::Vcf(ref mut wtr) = self {
-                    wtr.translate(record);
                     match wtr.write(record) {
                         Ok(_) => Ok(()),
                         Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
@@ -96,6 +101,21 @@ fn process_template(template: Option<String>, lua: &Lua) -> Option<mlua::Functio
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Hash)]
+enum InfoFormat {
+    Info(String),
+    #[allow(dead_code)]
+    Format(String),
+}
+
+#[derive(Debug)]
+enum InfoFormatValue {
+    Bool(bool),
+    Float(f32),
+    Integer(i32),
+    String(String),
+}
+
 impl<'lua> VCFExpr<'lua> {
     /// Create a new VCFExpr object. This object will read a VCF file, evaluate a set of expressions.
     /// The expressions should return a boolean. Evaluations will stop on the first true expression.
@@ -105,6 +125,7 @@ impl<'lua> VCFExpr<'lua> {
         lua: &'lua Lua,
         vcf_path: String,
         expression: Vec<String>,
+        info_expressions: Vec<String>,
         template: Option<String>,
         lua_prelude: Option<String>,
         output: Option<String>,
@@ -142,6 +163,8 @@ impl<'lua> VCFExpr<'lua> {
             })?;
         }
 
+        let info_exps = VCFExpr::load_info_expressions(lua, &mut hv, info_expressions)?;
+
         let header = bcf::header::Header::from_template(&hv);
 
         let writer = if template.is_none() {
@@ -169,10 +192,44 @@ impl<'lua> VCFExpr<'lua> {
             template,
             writer: Some(writer),
             expressions: exps,
+            info_expressions: info_exps,
             globals,
             variants_evaluated: 0,
             variants_passing: 0,
         })
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn load_info_expressions(
+        lua: &'lua Lua,
+        hv: &mut bcf::header::HeaderView,
+        info_expressions: Vec<String>,
+    ) -> Result<
+        HashMap<InfoFormat, ((TagType, TagLength), mlua::Function<'lua>)>,
+        Box<dyn std::error::Error>,
+    > {
+        let info_exps: HashMap<_, _> = info_expressions
+            .iter()
+            .map(|exp| {
+                let name_exp = exp
+                    .split_once('=')
+                    .expect("invalid info expression should have name=$expression");
+                let t = hv
+                    .info_type(name_exp.0.as_bytes())
+                    .unwrap_or_else(|_| panic!("info field {} not found", name_exp.0));
+                (
+                    InfoFormat::Info(name_exp.0.to_string()),
+                    (
+                        t,
+                        lua.load(name_exp.1)
+                            .set_name(exp)
+                            .into_function()
+                            .unwrap_or_else(|_| panic!("error in expression: {}", exp)),
+                    ),
+                )
+            })
+            .collect();
+        Ok(info_exps)
     }
 
     /// Add lua code to the Lua interpreter. This code will be available to the expressions and the template.
@@ -198,9 +255,42 @@ impl<'lua> VCFExpr<'lua> {
         self.writer.take().expect("writer already taken")
     }
 
+    // this is called from in the scope and lets us evaluate the info expressions.
+    // we collect the results to be used outside the scope where we can get a mutable variant.
+    fn evaluate_info_expressions(
+        &self,
+        info_results: &mut HashMap<String, InfoFormatValue>,
+    ) -> mlua::Result<()> {
+        for (inf, ((tagtyp, _taglen), expr)) in self.info_expressions.iter() {
+            if let InfoFormat::Info(tag) = inf {
+                let t = match tagtyp {
+                    TagType::Flag => {
+                        let b = expr.call::<_, bool>(())?;
+                        InfoFormatValue::Bool(b)
+                    }
+                    TagType::Float => {
+                        let f = expr.call::<_, f32>(())?;
+                        InfoFormatValue::Float(f)
+                    }
+                    TagType::Integer => {
+                        let i = expr.call::<_, i32>(())?;
+                        InfoFormatValue::Integer(i)
+                    }
+                    TagType::String => {
+                        let s = expr.call::<_, String>(())?;
+                        InfoFormatValue::String(s)
+                    }
+                };
+                info_results.insert(tag.clone(), t);
+            }
+        }
+        Ok(())
+    }
+
     pub fn evaluate(&mut self, record: bcf::Record) -> std::io::Result<StringOrVariant> {
         let mut variant = Variant::new(record);
         self.variants_evaluated += 1;
+        let mut info_results = HashMap::new();
         let eval_result = self.lua.scope(|scope| {
             let ud = match scope.create_any_userdata_ref_mut(&mut variant) {
                 Ok(ud) => ud,
@@ -210,6 +300,7 @@ impl<'lua> VCFExpr<'lua> {
                 Ok(_) => (),
                 Err(e) => return Err(e),
             }
+            self.evaluate_info_expressions(&mut info_results)?;
             // we have many expressions, we stop on the first passing expression. The result of this scope
             // can be either a bool, or a string (if we have a template).
             for exp in &self.expressions {
@@ -235,10 +326,33 @@ impl<'lua> VCFExpr<'lua> {
 
             Ok(StringOrVariant::None)
         });
-        match eval_result {
-            Ok(StringOrVariant::Variant(None)) => {
-                Ok(StringOrVariant::Variant(Some(variant.take())))
+
+        let mut record = variant.take();
+        for (stag, value) in info_results {
+            let tag = stag.as_bytes();
+            debug!("Setting info field: {}: {:?}", stag, value);
+            let result = match value {
+                InfoFormatValue::Bool(b) => {
+                    if b {
+                        record.push_info_flag(tag)
+                    } else {
+                        record.clear_info_flag(tag)
+                    }
+                }
+                InfoFormatValue::Float(f) => record.push_info_float(tag, &[f]),
+                InfoFormatValue::Integer(i) => record.push_info_integer(tag, &[i]),
+                InfoFormatValue::String(s) => record.push_info_string(tag, &[s.as_bytes()]),
+            };
+            match result {
+                Ok(_) => (),
+                Err(e) => {
+                    log::error!("Error setting info field: {}: {}", stag, e);
+                    return Err(std::io::Error::new(std::io::ErrorKind::Other, e));
+                }
             }
+        }
+        match eval_result {
+            Ok(StringOrVariant::Variant(None)) => Ok(StringOrVariant::Variant(Some(record))),
             Ok(b) => Ok(b),
             Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
         }

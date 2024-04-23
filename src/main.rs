@@ -26,6 +26,11 @@ pub enum Commands {
         #[arg(short, long)]
         expression: Vec<String>,
 
+        /// set expressions to set existing INFO fields (new ones can be added in prelude)
+        /// e.g. --info-expressions "AFmax=math.max(variant:info('AF'), variant:info('AFx'))"
+        #[arg(short = 's', long)]
+        info_expressions: Vec<String>,
+
         /// template expression in luau: https://luau-lang.org/syntax#string-interpolation. e.g. '{variant.chrom}:{variant.pos}'
         #[arg(short, long)]
         template: Option<String>,
@@ -46,7 +51,8 @@ pub enum Commands {
 
 fn filter_main(
     path: String,
-    expression: Vec<String>,
+    expressions: Vec<String>,
+    info_expressions: Vec<String>,
     template: Option<String>,
     lua_code: Vec<String>,
     lua_prelude: Option<String>,
@@ -55,7 +61,15 @@ fn filter_main(
     env_logger::init();
     let lua = Lua::new();
 
-    let mut vcfexpr = VCFExpr::new(&lua, path, expression, template, lua_prelude, output)?;
+    let mut vcfexpr = VCFExpr::new(
+        &lua,
+        path,
+        expressions,
+        info_expressions,
+        template,
+        lua_prelude,
+        output,
+    )?;
     for path in lua_code {
         vcfexpr.add_lua_code(&path)?;
     }
@@ -63,7 +77,8 @@ fn filter_main(
     let mut writer = vcfexpr.writer();
 
     for record in reader.records() {
-        let record = record?;
+        let mut record = record?;
+        writer.translate(&mut record);
         let mut sob = vcfexpr.evaluate(record)?;
         writer.write(&mut sob)?;
     }
@@ -76,12 +91,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(Commands::Filter {
             path,
             expression,
+            info_expressions,
             template,
             lua: lua_code,
             lua_prelude,
             output,
         }) => {
-            filter_main(path, expression, template, lua_code, lua_prelude, output)?;
+            filter_main(
+                path,
+                expression,
+                info_expressions,
+                template,
+                lua_code,
+                lua_prelude,
+                output,
+            )?;
         }
         None => {
             println!("No command provided");
