@@ -1,5 +1,8 @@
 # vcfexpr
 
+> [!CAUTION]
+> While the output of VCFExpr should be reliable, the error messages might be lacking. Please [report](https://github.com/brentp/vcfexpr/issues).
+
 [![Rust](https://github.com/brentp/vcfexpr/actions/workflows/rust.yml/badge.svg)](https://github.com/brentp/vcfexpr/actions/workflows/rust.yml)
 
 This is an experiment on how to implement user-expressions
