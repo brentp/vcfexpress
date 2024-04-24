@@ -14,7 +14,7 @@ pub struct VCFExpr<'lua> {
     template: Option<mlua::Function<'lua>>,
     writer: Option<EitherWriter>,
     expressions: Vec<mlua::Function<'lua>>,
-    info_expressions: HashMap<InfoFormat, ((TagType, TagLength), mlua::Function<'lua>)>,
+    set_expressions: HashMap<InfoFormat, ((TagType, TagLength), mlua::Function<'lua>)>,
     globals: mlua::Table<'lua>,
     variants_evaluated: usize,
     variants_passing: usize,
@@ -124,12 +124,15 @@ impl<'lua> VCFExpr<'lua> {
         lua: &'lua Lua,
         vcf_path: String,
         expression: Vec<String>,
-        info_expressions: Vec<String>,
+        set_expression: Vec<String>,
         template: Option<String>,
         lua_prelude: Option<String>,
         output: Option<String>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         lua.load(crate::pprint::PPRINT).set_name("pprint").exec()?;
+        lua.load(crate::pprint::PRELUDE)
+            .set_name("prelude")
+            .exec()?;
 
         let mut reader = match vcf_path.as_str() {
             "-" | "stdin" => bcf::Reader::from_stdin()?,
@@ -162,7 +165,7 @@ impl<'lua> VCFExpr<'lua> {
             })?;
         }
 
-        let info_exps = VCFExpr::load_info_expressions(lua, &mut hv, info_expressions)?;
+        let info_exps = VCFExpr::load_info_expressions(lua, &mut hv, set_expression)?;
 
         let header = bcf::header::Header::from_template(&hv);
 
@@ -189,7 +192,7 @@ impl<'lua> VCFExpr<'lua> {
             template,
             writer: Some(writer),
             expressions: exps,
-            info_expressions: info_exps,
+            set_expressions: info_exps,
             globals,
             variants_evaluated: 0,
             variants_passing: 0,
@@ -258,7 +261,7 @@ impl<'lua> VCFExpr<'lua> {
         &self,
         info_results: &mut HashMap<String, InfoFormatValue>,
     ) -> mlua::Result<()> {
-        for (inf, ((tagtyp, _taglen), expr)) in self.info_expressions.iter() {
+        for (inf, ((tagtyp, _taglen), expr)) in self.set_expressions.iter() {
             if let InfoFormat::Info(tag) = inf {
                 let t = match tagtyp {
                     TagType::Flag => {

@@ -25,22 +25,13 @@ vcfexpr filter -e "return variant:info('AN') > 3000" \
 ```
 
 ---
-use `all` in user-defined `funcs.lua`
-check the sample fields to get variants where all samples have high DP
+check the sample fields to get variants where `all` samples have high DP.
+`all` is defined by `vcfexpr` (`any`, `filter` are also available).
+Users can load their own functions with `-l $lua_file`.
 ```
-vcfexpr filter -l funcs.lua \
-   -e 'return all(variant:format("DP"), function (dp)  return dp > 10 end)' \
+vcfexpr filter \
+   -e 'return all(function (dp)  return dp > 10 end, variant:format("DP"))' \
    -o all-high-dp.bcf $input_vcf
-```
-```
-$ cat funcs.lua
-function all(t, f)
-    for _, v in pairs(t) do
-        if v ~= nil and not f(v) then
-            return false
-        end
-    end
-return true
 ```
 ---
 
@@ -143,18 +134,28 @@ Arguments:
   <PATH>  Path to input VCF or BCF file
 
 Options:
-  -e, --expression <EXPRESSION>    boolean Lua expression(s) to filter the VCF or BCF file
-  -t, --template <TEMPLATE>        template expression in luau: https://luau-lang.org/syntax#string-interpolation. e.g. '{variant.chrom}:{variant.pos}'
-  -l, --lua <LUA>                  File(s) containing lua code to load. May contain functions that will be called by the expressions
-  -p, --lua-prelude <LUA_PRELUDE>  File containing lua code to run once before any variants are processed
-  -o, --output <OUTPUT>            Optional output file. Default is stdout
-  -h, --help                       Print help
+  -e, --expression <EXPRESSION>
+          boolean Lua expression(s) to filter the VCF or BCF file
+  -s, --set-expression <SET_EXPRESSION>
+          expression(s) to set existing INFO fields (new ones can be added in prelude)
+          e.g. --set-expression "AFmax=math.max(variant:info('AF'), variant:info('AFx'))"
+  -t, --template <TEMPLATE>
+          template expression in luau: https://luau-lang.org/syntax#string-interpolation. e.g. '{variant.chrom}:{variant.pos}'
+  -l, --lua <LUA>
+          File(s) containing lua code to load. May contain functions that will be called by the expressions
+  -p, --lua-prelude <LUA_PRELUDE>
+          File containing lua code to run once before any variants are processed
+  -o, --output <OUTPUT>
+          Optional output file. Default is stdout
+  -h, --help
+          Print help
 ```
 
 
 # TODO
 
-+ Currently --info-expressions can only be used when output is VCF. Update to support template output as well. So we need the header to translate.
++ Currently --set-expressions can only be used when output is VCF. Update to support template output as well. So we need the header to translate.
++ suuport --set-expressions for FORMAT fields (the infrastructure for this is there, just have to expose it)
 + add a functional lib such as [Moses](https://github.com/Yonaba/Moses) or [Lume](https://github.com/rxi/lume) which have `map`/`filter` and other functions.
   (The user can add these on their own with `--lua`).
 + write a class to simplify accessing CSQ fields.

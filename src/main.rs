@@ -26,10 +26,10 @@ pub enum Commands {
         #[arg(short, long)]
         expression: Vec<String>,
 
-        /// set expressions to set existing INFO fields (new ones can be added in prelude)
-        /// e.g. --info-expressions "AFmax=math.max(variant:info('AF'), variant:info('AFx'))"
+        /// expression(s) to set existing INFO field(s) (new ones can be added in prelude)
+        /// e.g. --set-expression "AFmax=math.max(variant:info('AF'), variant:info('AFx'))"
         #[arg(short = 's', long)]
-        info_expressions: Vec<String>,
+        set_expression: Vec<String>,
 
         /// template expression in luau: https://luau-lang.org/syntax#string-interpolation. e.g. '{variant.chrom}:{variant.pos}'
         #[arg(short, long)]
@@ -52,7 +52,7 @@ pub enum Commands {
 fn filter_main(
     path: String,
     expressions: Vec<String>,
-    info_expressions: Vec<String>,
+    set_expression: Vec<String>,
     template: Option<String>,
     lua_code: Vec<String>,
     lua_prelude: Option<String>,
@@ -65,7 +65,7 @@ fn filter_main(
         &lua,
         path,
         expressions,
-        info_expressions,
+        set_expression,
         template,
         lua_prelude,
         output,
@@ -91,7 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(Commands::Filter {
             path,
             expression,
-            info_expressions,
+            set_expression,
             template,
             lua: lua_code,
             lua_prelude,
@@ -100,7 +100,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             filter_main(
                 path,
                 expression,
-                info_expressions,
+                set_expression,
                 template,
                 lua_code,
                 lua_prelude,

@@ -86,3 +86,40 @@ function pprint(node)
     print(output_str)
 end
         "#;
+
+pub const PRELUDE: &str = r#"
+function map(f, t, skip_nil)
+    local new_t = {}
+    local j = 1
+    for i, v in ipairs(t) do
+        if v ~= nil or not skip_nil then
+            new_t[j] = f(v)
+            j = j + 1
+        end
+    end
+    return new_t
+end
+function filter(f, t, skip_nil)
+    local new_t = {}
+    local j = 1
+    for i, v in ipairs(t) do
+        if v ~= nil or not skip_nil then
+            if f(v) then
+                new_t[j] = v
+                j = j + 1
+            end
+        end
+    end
+    return new_t
+end
+
+function all(f, t, skip_nil)
+    for i, v in ipairs(t) do
+        if (v ~= nil or not skip_nil) and not f(v) then
+            return false
+        end
+    end
+    return true
+end
+
+"#;
