@@ -1,3 +1,5 @@
+//! This crate supports applying user-defined lua expressions to each variant in a VCF File.
+//!
 pub mod genotypes;
 //pub mod sample;
 pub mod header;

@@ -8,6 +8,7 @@ use std::{collections::HashMap, hash::Hash, io::Write};
 
 use crate::variant::Variant;
 
+/// VCFExpr is the only entry-point for this library.
 pub struct VCFExpr<'lua> {
     lua: &'lua Lua,
     vcf_reader: Option<bcf::Reader>,
@@ -20,12 +21,15 @@ pub struct VCFExpr<'lua> {
     variants_passing: usize,
 }
 
+/// This allows `evaluate` to return either a string, a VCF record, or nothing.
 pub enum StringOrVariant {
     String(String),
     Variant(Option<bcf::Record>),
     None,
 }
 
+/// `EitherWriter` encapsulates the different types of writers we can use.
+/// `File` and `Stdout` are for template output and `Vcf` is for VCF records.
 pub enum EitherWriter {
     Vcf(bcf::Writer),
     File(std::io::BufWriter<std::fs::File>),
@@ -120,6 +124,9 @@ impl<'lua> VCFExpr<'lua> {
     /// The expressions should return a boolean. Evaluations will stop on the first true expression.
     /// If a template is provided, the template will be evaluated in the same scope as the expression and used
     /// to generate the text output. If no template is provided, the VCF record will be written to the output.
+    /// The template is a [luau string template].
+    ///
+    /// [luau string template]: https://luau-lang.org/syntax#string-interpolation
     pub fn new(
         lua: &'lua Lua,
         vcf_path: String,
@@ -246,11 +253,14 @@ impl<'lua> VCFExpr<'lua> {
         Ok(())
     }
 
-    /// Return a reference to the bcf::Reader object.
+    /// Take ownership of the the bcf::Reader object.
+    /// This must be called before using `evaluate`
     pub fn reader(&mut self) -> bcf::Reader {
         self.vcf_reader.take().expect("reader already taken")
     }
 
+    /// Take ownership of the the Writer enum.
+    /// This must be called before using `evaluate`
     pub fn writer(&mut self) -> EitherWriter {
         self.writer.take().expect("writer already taken")
     }
@@ -287,6 +297,7 @@ impl<'lua> VCFExpr<'lua> {
         Ok(())
     }
 
+    /// Evaluate the expressions and optional template for a single record.
     pub fn evaluate(&mut self, record: bcf::Record) -> std::io::Result<StringOrVariant> {
         let mut variant = Variant::new(record);
         self.variants_evaluated += 1;
