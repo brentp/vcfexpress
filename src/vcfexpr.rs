@@ -21,9 +21,12 @@ pub struct VCFExpr<'lua> {
     variants_passing: usize,
 }
 
-/// This allows `evaluate` to return either a string, a VCF record, or nothing.
+/// `StringOrVariant` allows `evaluate` to return either a string, an owned VCF record, or nothing.
 pub enum StringOrVariant {
     String(String),
+    // Variant(None) is used since we sometimes can't take ownership of the
+    // bcf::Record right away so we set Variant(None) and later replace
+    // with Variant(Some(Record)).
     Variant(Option<bcf::Record>),
     None,
 }
@@ -350,7 +353,7 @@ impl<'lua> VCFExpr<'lua> {
                         record.clear_info_flag(tag)
                     }
                 }
-                InfoFormatValue::Float(f) => record.push_info_float(b"af_copy", &[f]),
+                InfoFormatValue::Float(f) => record.push_info_float(tag, &[f]),
                 InfoFormatValue::Integer(i) => record.push_info_integer(tag, &[i]),
                 InfoFormatValue::String(s) => record.push_info_string(tag, &[s.as_bytes()]),
             };
