@@ -99,6 +99,8 @@ function map(f, t, skip_nil)
     end
     return new_t
 end
+
+-- note that this  uses ipairs so only the array portions of the table will be used
 function filter(f, t, skip_nil)
     local new_t = {}
     local j = 1
@@ -113,6 +115,7 @@ function filter(f, t, skip_nil)
     return new_t
 end
 
+-- note that this  uses ipairs so only the array portions of the table will be used
 function all(f, t, skip_nil)
     for i, v in ipairs(t) do
         if (v ~= nil or not skip_nil) and not f(v) then
@@ -120,6 +123,16 @@ function all(f, t, skip_nil)
         end
     end
     return true
+end
+
+-- note that this  uses ipairs so only the array portions of the table will be used
+function any(f, t, skip_nil)
+    for i, v in ipairs(t) do
+        if (v ~= nil or not skip_nil) and f(v) then
+            return true
+        end
+    end
+    return false
 end
 
 "#;
