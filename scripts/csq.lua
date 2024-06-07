@@ -65,6 +65,8 @@ function CSQ:__index(key)
     end
 end
 
+--[[
+
 header = { "Allele", "Consequence", "IMPACT", "cDNA_position", "AF" }
 vals = "A|missense_variant|MODERATE|c.1A>G|1.1e-05"
 
@@ -72,3 +74,5 @@ c = CSQ.new(vals, header)
 print(tostring(c))
 print(c.Allele)
 print(c.AF)
+
+--]]
