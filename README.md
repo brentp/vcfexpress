@@ -94,6 +94,8 @@ allele.phased -> bool
 allele.allele -> integer e.g. 0 for "0" allele
 
 header.samples (set/get) -> vec<string> -- TODO: allow setting samples before iteration.
+header:info_get("DP") -> table<string,string>
+header:format_get("AD") -> table<string,string>
 
 -- these header:add_* are available only in the prelude. currently only Number=1 is supported.
 header:add_info({Type="Integer", Number=1, Description="asdf", ID="new field"})

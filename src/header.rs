@@ -64,14 +64,13 @@ fn find_record(
         })
         .next();
 
-    if hrec.is_none() {
-        return Err(mlua::Error::ExternalError(Arc::new(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!("key {}, hdr_type:{:?} not found in header", key, hdr_type),
-        ))));
+    if let Some(hrec) = hrec {
+        return Ok(hrec);
     }
-    eprintln!("hrec: {:?}", hrec);
-    Ok(hrec.unwrap())
+    Err(mlua::Error::ExternalError(Arc::new(std::io::Error::new(
+        std::io::ErrorKind::InvalidInput,
+        format!("key {}, hdr_type:{:?} not found in header", key, hdr_type),
+    ))))
 }
 
 pub(crate) fn register_header(lua: &Lua) -> mlua::Result<()> {
