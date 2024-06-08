@@ -21,43 +21,36 @@ fn handle_hash_get<'a>(
     }
 }
 
+macro_rules! find_record_match {
+    ($record:expr, $key:expr, $record_type:ident) => {
+        match $record {
+            HeaderRecord::$record_type { key: _, values } => {
+                if values.get("ID") != Some(&$key.to_string()) {
+                    return None;
+                }
+                Some(HashMap::from_iter(
+                    values
+                        .into_iter()
+                        .map(|(k, v)| (k.to_string(), v.to_string())),
+                ))
+            }
+            _ => None,
+        }
+    };
+}
+
 fn find_record(
     records: &[HeaderRecord],
     key: &str,
     hdr_type: ::libc::c_uint,
-    //) -> Option<HashMap<String, String>> {
 ) -> Result<HashMap<String, String>, mlua::Error> {
     let hrec = records
         .iter()
         .filter_map(|x| {
             if hdr_type == rust_htslib::htslib::BCF_HL_INFO {
-                match x {
-                    HeaderRecord::Info { key: _, values } => {
-                        if values.get("ID") != Some(&key.to_string()) {
-                            return None;
-                        }
-                        Some(HashMap::from_iter(
-                            values
-                                .into_iter()
-                                .map(|(k, v)| (k.to_string(), v.to_string())),
-                        ))
-                    }
-                    _ => None,
-                }
+                find_record_match!(x, key, Info)
             } else if hdr_type == rust_htslib::htslib::BCF_HL_FMT {
-                match x {
-                    HeaderRecord::Format { key: _, values } => {
-                        if values.get("ID") != Some(&key.to_string()) {
-                            return None;
-                        }
-                        Some(HashMap::from_iter(
-                            values
-                                .into_iter()
-                                .map(|(k, v)| (k.to_string(), v.to_string())),
-                        ))
-                    }
-                    _ => None,
-                }
+                find_record_match!(x, key, Format)
             } else {
                 None
             }
