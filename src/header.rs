@@ -1,5 +1,6 @@
 use mlua::{AnyUserData, Lua, MetaMethod, UserDataFields, UserDataMethods};
 use rust_htslib::bcf::header::{Header, HeaderView};
+use rust_htslib::bcf::HeaderRecord;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -20,8 +21,85 @@ fn handle_hash_get<'a>(
     }
 }
 
+fn find_record(
+    records: &[HeaderRecord],
+    key: &str,
+    hdr_type: ::libc::c_uint,
+    //) -> Option<HashMap<String, String>> {
+) -> Result<HashMap<String, String>, mlua::Error> {
+    let hrec = records
+        .iter()
+        .filter_map(|x| {
+            if hdr_type == rust_htslib::htslib::BCF_HL_INFO {
+                match x {
+                    HeaderRecord::Info { key: _, values } => {
+                        if values.get("ID") != Some(&key.to_string()) {
+                            return None;
+                        }
+                        Some(HashMap::from_iter(
+                            values
+                                .into_iter()
+                                .map(|(k, v)| (k.to_string(), v.to_string())),
+                        ))
+                    }
+                    _ => None,
+                }
+            } else if hdr_type == rust_htslib::htslib::BCF_HL_FMT {
+                match x {
+                    HeaderRecord::Format { key: _, values } => {
+                        if values.get("ID") != Some(&key.to_string()) {
+                            return None;
+                        }
+                        Some(HashMap::from_iter(
+                            values
+                                .into_iter()
+                                .map(|(k, v)| (k.to_string(), v.to_string())),
+                        ))
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        })
+        .next();
+
+    if hrec.is_none() {
+        return Err(mlua::Error::ExternalError(Arc::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("key {}, hdr_type:{:?} not found in header", key, hdr_type),
+        ))));
+    }
+    eprintln!("hrec: {:?}", hrec);
+    Ok(hrec.unwrap())
+}
+
 pub(crate) fn register_header(lua: &Lua) -> mlua::Result<()> {
     lua.register_userdata_type::<HeaderView>(|reg| {
+        reg.add_function(
+            "info_get",
+            |_lua: &Lua, (ud, find_key): (AnyUserData, String)| {
+                // get the HREC
+                let this = ud.borrow_mut::<HeaderView>()?;
+                find_record(
+                    &this.header_records(),
+                    &find_key,
+                    rust_htslib::htslib::BCF_HL_INFO,
+                )
+            },
+        );
+        reg.add_function(
+            "format_get",
+            |_lua: &Lua, (ud, find_key): (AnyUserData, String)| {
+                // get the HREC
+                let this = ud.borrow_mut::<HeaderView>()?;
+                find_record(
+                    &this.header_records(),
+                    &find_key,
+                    rust_htslib::htslib::BCF_HL_FMT,
+                )
+            },
+        );
         reg.add_meta_function(MetaMethod::ToString, |_lua, this: AnyUserData| {
             let this = this.borrow::<HeaderView>()?;
 
