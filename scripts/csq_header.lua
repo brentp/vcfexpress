@@ -57,4 +57,12 @@ for i, v in ipairs(parsed_table3) do
     print(i, v)
 end
 
+
+desc =
+'Functional annotations: \'Allele | Annotation | Annotation_Impact | Gene_Name | Gene_ID | Feature_Type | Feature_ID | Transcript_BioType | Rank | HGVS.c | HGVS.p | cDNA.pos / cDNA.length | CDS.pos / CDS.length | AA.pos / AA.length | Distance | ERRORS / WARNINGS / INFO\'"'
+
+for i, v in ipairs(parse_description(desc)) do
+    print(i, v)
+end
+
 --]]

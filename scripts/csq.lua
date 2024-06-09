@@ -8,8 +8,8 @@ function CSQ.new(fields, header)
     end
     -- now fill a table with keys from header and values from fields
     local self = setmetatable({}, CSQ)
-    for i, field in ipairs(fields) do
-        self[header[i]] = field
+    for i, h in ipairs(header) do
+        self[h] = fields[i]
     end
     return self
 end
@@ -36,12 +36,12 @@ NUMBER_FIELDS = { "AF", "AFR_AF", "AMR_AF", "ASN_AF", "EUR_AF", "EAS_AF", "SAS_A
     "gnomAD_NFE_TSI_AF", "gnomAD_NFE_FOE_AF", "gnomAD_NFE_NWE_AF", "gnomAD_NFE_SEU_AF", "gnomAD_NFE_SWE_AF",
     "gnomAD_NFE_ONF_AF", "gnomAD_NFE_EST_AF", "gnomAD_NFE_MED_AF",
     "gnomAD_NFE_SCA_AF", "gnomAD_NFE_BAL_AF", "gnomAD_NFE_IB",
-    "MAX_AF", "MAX_AF_POPS", }
+    "MAX_AF", "MAX_AF_POPS", "ALLELE_NUM", "DISTANCE"
+}
 -- if the field starts with gnomAD_ also add gnomADe_... and gnomADg_...
 add_gnomad = {}
 for _, field in ipairs(NUMBER_FIELDS) do
     if string.match(field, "^gnomAD_") then
-        print(string.gsub(field, "^gnomAD_", "gnomADe_"))
         add_gnomad[#add_gnomad + 1] = string.gsub(field, "^gnomAD_", "gnomADe_")
         add_gnomad[#add_gnomad + 1] = string.gsub(field, "^gnomAD_", "gnomADg_")
     end
