@@ -36,12 +36,15 @@ pub enum Commands {
         template: Option<String>,
 
         /// File(s) containing lua code to load. May contain functions that will be called by the expressions.
+        /// Prefer to use `--lua_prelude` for code that should be run once before any variants are processed.
+        /// This option may be deprecated.
         #[arg(short, long)]
         lua: Vec<String>,
 
-        /// File containing lua code to run once before any variants are processed.
+        /// File(s) containing lua code to run once before any variants are processed.
+        /// `header` is available here to access or modify the header.
         #[arg(short = 'p', long)]
-        lua_prelude: Option<String>,
+        lua_prelude: Vec<String>,
 
         /// Optional output file. Default is stdout.
         #[arg(short, long)]
@@ -55,7 +58,7 @@ fn filter_main(
     set_expression: Vec<String>,
     template: Option<String>,
     lua_code: Vec<String>,
-    lua_prelude: Option<String>,
+    lua_prelude: Vec<String>,
     output: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();

@@ -136,7 +136,7 @@ impl<'lua> VCFExpr<'lua> {
         expression: Vec<String>,
         set_expression: Vec<String>,
         template: Option<String>,
-        lua_prelude: Option<String>,
+        lua_prelude: Vec<String>,
         output: Option<String>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         lua.load(crate::pprint::PPRINT).set_name("pprint").exec()?;
@@ -167,13 +167,14 @@ impl<'lua> VCFExpr<'lua> {
             rust_htslib::htslib::bcf_hdr_dup(reader.header().inner)
         });
 
-        if let Some(lua_code) = lua_prelude {
-            let code = std::fs::read_to_string(lua_code)?;
-            lua.scope(|scope| {
-                globals.raw_set("header", scope.create_any_userdata_ref_mut(&mut hv)?)?;
-                lua.load(&code).exec()
-            })?;
-        }
+        lua.scope(|scope| {
+            globals.raw_set("header", scope.create_any_userdata_ref_mut(&mut hv)?)?;
+            for path in lua_prelude {
+                let code = std::fs::read_to_string(path)?;
+                lua.load(&code).exec()?;
+            }
+            Ok(())
+        })?;
 
         let info_exps = VCFExpr::load_info_expressions(lua, &mut hv, set_expression)?;
 
