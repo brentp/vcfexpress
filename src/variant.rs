@@ -26,6 +26,24 @@ use log::{debug, log_enabled, Level};
 
 pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
     lua.register_userdata_type::<Variant>(|reg| {
+        reg.add_meta_function(MetaMethod::ToString, |_lua, this: AnyUserData| {
+            let v = &this.borrow::<Variant>()?.0;
+            let mut kstr = rust_htslib::htslib::kstring_t {
+                l: 0,
+                m: 0,
+                s: std::ptr::null_mut(),
+            };
+            let h = v.header();
+            unsafe { rust_htslib::htslib::vcf_format(h.inner, v.inner(), &mut kstr) };
+            let s = unsafe {
+                String::from_utf8_unchecked(
+                    std::slice::from_raw_parts(kstr.s as *const u8, kstr.l as usize).to_vec(),
+                )
+            };
+            eprintln!("s: {}", s);
+
+            Ok(s)
+        });
         reg.add_meta_function(
             MetaMethod::Index,
             |_lua, (_, name): (AnyUserData, String)| {

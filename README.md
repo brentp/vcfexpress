@@ -83,6 +83,7 @@ variant:format("field_name") -> vec<string|number>
 variant:info("field_name") -> number|string|bool|vec<number|string|bool> 
 -- useful to pprint(variant:sample("mysample")) to see available fields.
 variant:sample("sample_name") -> table<string=any> 
+tostring(variant) -> string -- tab-delimited vcf/variant output.
 
 genotypes = variant.genotypes
 genotype = genotypes[i] -- get single genotype for 1 sample
@@ -160,7 +161,5 @@ Options:
 # TODO
 
 + Currently --set-expressions can only be used when output is VCF. Update to support template output as well. So we need the header to translate.
-+ suuport --set-expressions for FORMAT fields (the infrastructure for this is there, just have to expose it)
-+ add a functional lib such as [Moses](https://github.com/Yonaba/Moses) or [Lume](https://github.com/rxi/lume) which have `map`/`filter` and other functions.
-  (The user can add these on their own with `--lua`).
-+ write a class to simplify accessing CSQ fields.
++ support --set-expressions for FORMAT fields (the infrastructure for this is there, just have to expose it)
++ handle multiple CSQ fields.

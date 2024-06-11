@@ -170,8 +170,8 @@ impl<'lua> VCFExpr<'lua> {
         lua.scope(|scope| {
             globals.raw_set("header", scope.create_any_userdata_ref_mut(&mut hv)?)?;
             for path in lua_prelude {
-                let code = std::fs::read_to_string(path)?;
-                lua.load(&code).exec()?;
+                let code = std::fs::read_to_string(&path)?;
+                lua.load(&code).set_name(path).exec()?;
             }
             Ok(())
         })?;
