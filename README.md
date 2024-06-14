@@ -162,4 +162,3 @@ Options:
 
 + Currently --set-expressions can only be used when output is VCF. Update to support template output as well. So we need the header to translate.
 + support --set-expressions for FORMAT fields (the infrastructure for this is there, just have to expose it)
-+ handle multiple CSQ fields.

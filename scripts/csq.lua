@@ -17,9 +17,52 @@ end
 function CSQ:__tostring()
     local fields = {}
     for k, v in pairs(self) do
-        table.insert(fields, k .. "=" .. v)
+        if v ~= nil and v ~= "" then
+            table.insert(fields, k .. "=" .. v)
+        end
     end
     return table.concat(fields, ";")
+end
+
+CSQS = {}
+CSQS.__index = CSQS
+
+function CSQS.new(csq, header)
+    if type(csq) == "string" then
+        csq = string.split(csq, ",")
+    end
+    local self = setmetatable({}, CSQS)
+    self.csqs = {}
+    for _, fields in ipairs(csq) do
+        table.insert(self.csqs, CSQ.new(fields, header))
+    end
+    return self
+end
+
+function CSQS:any(f)
+    for _, csq in ipairs(self.csqs) do
+        if f(csq) then
+            return true
+        end
+    end
+    return false
+end
+
+function CSQS:__tostring()
+    local csqs = {}
+    for _, csq in ipairs(self.csqs) do
+        table.insert(csqs, tostring(csq))
+    end
+    return table.concat(csqs, ",\n")
+end
+
+function CSQS:all(f)
+    for _, csq in ipairs(self.csqs) do
+        if not f(csq) then
+            return false
+        end
+    end
+    return true
 end
 
 NUMBER_FIELDS = { "AF", "AFR_AF", "AMR_AF", "ASN_AF", "EUR_AF", "EAS_AF", "SAS_AF", "AA_AF", "EA_AF",
