@@ -6,7 +6,7 @@ use rust_htslib::bcf::{
 };
 use std::{collections::HashMap, hash::Hash, io::Write};
 
-use crate::variant::Variant;
+use crate::variant::{HeaderMap, Variant};
 
 /// VCFExpr is the only entry-point for this library.
 pub struct VCFExpr<'lua> {
@@ -302,8 +302,12 @@ impl<'lua> VCFExpr<'lua> {
     }
 
     /// Evaluate the expressions and optional template for a single record.
-    pub fn evaluate(&mut self, record: bcf::Record) -> std::io::Result<StringOrVariant> {
-        let mut variant = Variant::new(record);
+    pub fn evaluate(
+        &mut self,
+        record: bcf::Record,
+        header_map: HeaderMap,
+    ) -> std::io::Result<StringOrVariant> {
+        let mut variant = Variant::new(record, header_map);
         self.variants_evaluated += 1;
         let mut info_results = HashMap::new();
         let eval_result = self.lua.scope(|scope| {

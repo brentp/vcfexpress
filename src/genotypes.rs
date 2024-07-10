@@ -30,6 +30,7 @@ impl fmt::Display for Genotype {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Genotype(alleles) = self;
         write!(f, "{}", alleles[0].0)?;
+        // convert to the alleles
         for allele in alleles[1..].iter() {
             let allele = allele.0;
             let sep = match allele {
@@ -141,7 +142,7 @@ pub fn register_genotypes(lua: &Lua) -> mlua::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::variant::{register_variant, Variant};
+    use crate::variant::{register_variant, HeaderMap, Variant};
     use mlua::Lua;
     use rust_htslib::bcf;
 
@@ -187,7 +188,7 @@ mod tests {
         "#;
         let gts_exp = lua.load(gts_expr).set_name("gts").into_function().unwrap();
         let globals = lua.globals();
-        let mut variant = Variant::new(record);
+        let mut variant = Variant::new(record, HeaderMap::new());
 
         lua.scope(|scope| {
             let ud = scope.create_any_userdata_ref_mut(&mut variant).unwrap();

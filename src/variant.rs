@@ -2,14 +2,40 @@ use log::{error, info, warn};
 use mlua::prelude::LuaValue;
 use mlua::{AnyUserData, Lua, MetaMethod, UserDataFields, UserDataMethods, Value};
 use parking_lot::Mutex;
+use rust_htslib::bcf::header::{TagLength, TagType};
 use rust_htslib::bcf::{self};
+use rust_htslib::errors::Result;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::Arc;
 
-pub struct Variant(bcf::Record);
+/// Variant also keeps a cache of info tags to avoid repeated lookups.
+pub struct HeaderMap(Rc<RefCell<HashMap<String, (TagType, TagLength)>>>);
+
+impl Clone for HeaderMap {
+    fn clone(&self) -> Self {
+        HeaderMap(Rc::clone(&self.0))
+    }
+}
+
+pub struct Variant(bcf::Record, HeaderMap);
+
+impl HeaderMap {
+    pub fn new() -> Self {
+        HeaderMap(Rc::new(RefCell::new(HashMap::new())))
+    }
+}
+
+impl Default for HeaderMap {
+    fn default() -> Self {
+        HeaderMap::new()
+    }
+}
 
 impl Variant {
-    pub fn new(record: bcf::Record) -> Self {
-        Variant(record)
+    pub fn new(record: bcf::Record, header_map: HeaderMap) -> Self {
+        Variant(record, header_map)
     }
     pub fn record(&self) -> &bcf::Record {
         &self.0
@@ -19,6 +45,25 @@ impl Variant {
     }
     pub fn take(self) -> bcf::Record {
         self.0
+    }
+
+    pub fn info_type(&self, key: &str) -> Result<(TagType, TagLength)> {
+        let t = match self.1 .0.borrow().get(key) {
+            Some((typ, num)) => return Ok((*typ, *num)),
+            None => {
+                let typ = self.0.header().info_type(key.as_bytes());
+                match typ {
+                    Err(e) => {
+                        error!("info tag '{}' not found in VCF", key);
+                        return Err(e);
+                    }
+                    Ok(t) => t,
+                }
+            }
+        };
+
+        self.1 .0.borrow_mut().insert(key.to_string(), t);
+        Ok(t)
     }
 }
 
@@ -265,8 +310,9 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
         reg.add_method(
             "info",
             |lua: &Lua, this: &Variant, (key, index): (String, Option<usize>)| {
-                let mut info = this.0.info(key.as_bytes()); /* only need mut for .flag */
-                let typ = this.0.header().info_type(key.as_bytes());
+                let bkey = key.as_bytes();
+                let mut info = this.0.info(bkey); /* only need mut for .flag */
+                let typ = this.info_type(&key);
                 let (typ, num) = match typ {
                     Err(e) => {
                         error!("info tag '{}' not found in VCF", key);
@@ -481,7 +527,7 @@ mod tests {
         ];
         record.push_genotypes(alleles).unwrap();
 
-        (lua, Variant::new(record))
+        (lua, Variant::new(record, HeaderMap::new()))
     }
 
     #[test]

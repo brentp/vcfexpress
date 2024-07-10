@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use mlua::Lua;
 use rust_htslib::bcf::Read;
 
-use vcfexpr::vcfexpr::VCFExpr;
+use vcfexpr::{variant::HeaderMap, vcfexpr::VCFExpr};
 
 /// Args take the arguments for clap.
 /// Accept the path to VCF or BCF and the lua expressions
@@ -79,10 +79,12 @@ fn filter_main(
     let mut reader = vcfexpr.reader();
     let mut writer = vcfexpr.writer();
 
+    let header_map = HeaderMap::new();
+
     for record in reader.records() {
         let mut record = record?;
         writer.translate(&mut record);
-        let mut sob = vcfexpr.evaluate(record)?;
+        let mut sob = vcfexpr.evaluate(record, header_map.clone())?;
         writer.write(&mut sob)?;
     }
     Ok(())
