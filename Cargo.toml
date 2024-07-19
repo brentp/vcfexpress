@@ -2,16 +2,27 @@
 name = "vcfexpr"
 version = "0.2.0"
 edition = "2021"
+authors = ["Brent Pedersen <bpederse@gmail.com>"]
+description = "A tool for filtering VCF files using Lua expressions"
+readme = "README.md"
+homepage = "https://github.com/brentp/vcfexpr"
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-mlua = { version = "0.9.7", features = ["luau", "send", "parking_lot"] }
-rust-htslib = { version = "0.46.0", features = ["libdeflate", "static"] }
+mlua = { version = "0.9.9", features = [
+    #"lua54",
+    "luau",
+    "send",
+    "parking_lot",
+    #"module",
+] }
+rust-htslib = { version = "0.47.0", features = ["libdeflate", "static"] }
 clap = { version = "4.5.4", features = ["derive"] }
 env_logger = "0.11.3"
 log = "0.4.21"
-parking_lot = { version = "0.12.1", features = ["arc_lock"] }
+parking_lot = { version = "0.12.3", features = ["arc_lock"] }
 #libc = "0.2.153"
 libc = "0.2"
 
@@ -22,6 +33,7 @@ src = "src/main.rs"
 [lib]
 name = "vcfexpr"
 src = "src/lib.rs"
+crate-type = ["rlib", "cdylib"]
 
 
 [profile.release]

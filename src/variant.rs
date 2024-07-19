@@ -3,6 +3,7 @@ use mlua::prelude::LuaValue;
 use mlua::{AnyUserData, Lua, MetaMethod, UserDataFields, UserDataMethods, Value};
 use parking_lot::Mutex;
 use rust_htslib::bcf::header::{TagLength, TagType};
+use rust_htslib::bcf::record::Buffer;
 use rust_htslib::bcf::{self};
 use rust_htslib::errors::Result;
 use std::cell::RefCell;
@@ -19,7 +20,10 @@ impl Clone for HeaderMap {
     }
 }
 
-pub struct Variant(bcf::Record, HeaderMap);
+pub struct Variant {
+    record: bcf::Record,
+    header_map: HeaderMap,
+}
 
 impl HeaderMap {
     pub fn new() -> Self {
@@ -35,23 +39,23 @@ impl Default for HeaderMap {
 
 impl Variant {
     pub fn new(record: bcf::Record, header_map: HeaderMap) -> Self {
-        Variant(record, header_map)
+        Variant { record, header_map }
     }
     pub fn record(&self) -> &bcf::Record {
-        &self.0
+        &self.record
     }
     pub fn header(&self) -> &bcf::header::HeaderView {
-        self.0.header()
+        self.record.header()
     }
     pub fn take(self) -> bcf::Record {
-        self.0
+        self.record
     }
 
     pub fn info_type(&self, key: &str) -> Result<(TagType, TagLength)> {
-        let t = match self.1 .0.borrow().get(key) {
+        let t = match self.header_map.0.borrow().get(key) {
             Some((typ, num)) => return Ok((*typ, *num)),
             None => {
-                let typ = self.0.header().info_type(key.as_bytes());
+                let typ = self.record.header().info_type(key.as_bytes());
                 match typ {
                     Err(e) => {
                         error!("info tag '{}' not found in VCF", key);
@@ -62,7 +66,7 @@ impl Variant {
             }
         };
 
-        self.1 .0.borrow_mut().insert(key.to_string(), t);
+        self.header_map.0.borrow_mut().insert(key.to_string(), t);
         Ok(t)
     }
 }
@@ -72,7 +76,7 @@ use log::{debug, log_enabled, Level};
 pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
     lua.register_userdata_type::<Variant>(|reg| {
         reg.add_meta_function(MetaMethod::ToString, |_lua, this: AnyUserData| {
-            let v = &this.borrow::<Variant>()?.0;
+            let v = &this.borrow::<Variant>()?.record;
             let mut kstr = rust_htslib::htslib::kstring_t {
                 l: 0,
                 m: 0,
@@ -98,30 +102,30 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
         );
         reg.add_field_method_get("chrom", |_, this: &Variant| {
             let c = this
-                .0
+                .record
                 .rid()
-                .map(|id| this.0.header().rid2name(id))
+                .map(|id| this.record.header().rid2name(id))
                 .unwrap_or(Ok(b""))
                 .map(|c| unsafe { String::from_utf8_unchecked(c.to_vec()) });
             c.map_err(|e| mlua::Error::ExternalError(Arc::new(e)))
         });
-        reg.add_field_method_get("qual", |_, this: &Variant| Ok(this.0.qual()));
+        reg.add_field_method_get("qual", |_, this: &Variant| Ok(this.record.qual()));
         reg.add_field_method_set("qual", |_, this: &mut Variant, val: f32| {
-            this.0.set_qual(val);
+            this.record.set_qual(val);
             Ok(())
         });
 
-        reg.add_field_method_get("start", |_, this: &Variant| Ok(this.0.pos()));
-        reg.add_field_method_get("stop", |_, this: &Variant| Ok(this.0.end()));
-        reg.add_field_method_get("pos", |_, this: &Variant| Ok(this.0.pos()));
+        reg.add_field_method_get("start", |_, this: &Variant| Ok(this.record.pos()));
+        reg.add_field_method_get("stop", |_, this: &Variant| Ok(this.record.end()));
+        reg.add_field_method_get("pos", |_, this: &Variant| Ok(this.record.pos()));
         reg.add_field_method_set("pos", |_, this: &mut Variant, val: i64| {
-            this.0.set_pos(val);
+            this.record.set_pos(val);
             Ok(())
         });
         reg.add_field_method_get("filters", |lua: &Lua, this: &Variant| {
-            let f = this.0.filters();
+            let f = this.record.filters();
             let t = lua.create_table().expect("error creating table");
-            let h = this.0.header();
+            let h = this.record.header();
             for (i, id) in f.into_iter().enumerate() {
                 let filter = unsafe { String::from_utf8_unchecked(h.id_to_name(id)) };
                 t.raw_set(i + 1, filter).expect("error setting value");
@@ -130,27 +134,30 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
         });
         reg.add_field_method_set(
             "filters",
-            |_, this: &mut Variant, filter: String| match this.0.set_filters(&[filter.as_bytes()]) {
+            |_, this: &mut Variant, filter: String| match this
+                .record
+                .set_filters(&[filter.as_bytes()])
+            {
                 Err(e) => Err(mlua::Error::ExternalError(Arc::new(e))),
                 Ok(_) => Ok(()),
             },
         );
         reg.add_field_method_get("id", |lua: &Lua, this: &Variant| {
-            let id = this.0.id();
+            let id = this.record.id();
             Ok(Value::String(unsafe {
                 lua.create_string(String::from_utf8_unchecked(id.to_vec()))?
             }))
         });
         reg.add_field_method_set(
             "id",
-            |_lua: &Lua, this: &mut Variant, val: String| match this.0.set_id(val.as_bytes()) {
+            |_lua: &Lua, this: &mut Variant, val: String| match this.record.set_id(val.as_bytes()) {
                 Err(e) => Err(mlua::Error::ExternalError(Arc::new(e))),
                 Ok(_) => Ok(()),
             },
         );
 
         reg.add_field_method_get("REF", |lua: &Lua, this: &Variant| {
-            let ref_allele = this.0.alleles()[0];
+            let ref_allele = this.record.alleles()[0];
             Ok(Value::String(unsafe {
                 lua.create_string(String::from_utf8_unchecked(ref_allele.to_vec()))?
             }))
@@ -158,7 +165,7 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
         reg.add_field_method_set("REF", |_lua: &Lua, this: &mut Variant, val: String| {
             let mut alleles = vec![val.as_bytes()];
             let alt_alleles = this
-                .0
+                .record
                 .alleles()
                 .iter()
                 .skip(1)
@@ -166,24 +173,24 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                 .collect::<Vec<_>>();
             alleles.extend(alt_alleles.iter().map(|a| &a[..]));
 
-            match this.0.set_alleles(&alleles) {
+            match this.record.set_alleles(&alleles) {
                 Ok(_) => Ok(()),
                 Err(e) => Err(mlua::Error::ExternalError(Arc::new(e))),
             }
         });
         reg.add_field_method_set("ALT", |_lua: &Lua, this: &mut Variant, val: Vec<String>| {
-            let ref_allele = this.0.alleles()[0].to_owned();
+            let ref_allele = this.record.alleles()[0].to_owned();
             let mut alleles = vec![&ref_allele[..]];
             alleles.extend(val.iter().map(|a| a.as_bytes()));
 
-            match this.0.set_alleles(&alleles) {
+            match this.record.set_alleles(&alleles) {
                 Ok(_) => Ok(()),
                 Err(e) => Err(mlua::Error::ExternalError(Arc::new(e))),
             }
         });
 
         reg.add_field_method_get("ALT", |lua: &Lua, this: &Variant| {
-            let alt_alleles = this.0.alleles();
+            let alt_alleles = this.record.alleles();
             let count = alt_alleles.len() - 1;
             let t = lua
                 .create_table_with_capacity(count, 0)
@@ -201,8 +208,8 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
             Ok(Value::Table(t))
         });
         reg.add_field_method_get("FILTER", |lua: &Lua, this: &Variant| {
-            let f = this.0.filters();
-            let h = this.0.header();
+            let f = this.record.filters();
+            let h = this.record.header();
             if let Some(filter) = f.into_iter().next() {
                 let filter = unsafe { String::from_utf8_unchecked(h.id_to_name(filter)) };
                 return Ok(Value::String(lua.create_string(&filter)?));
@@ -212,7 +219,7 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
         reg.add_field_method_set(
             "FILTER",
             |_lua, this: &mut Variant, filter: String| match this
-                .0
+                .record
                 .set_filters(&[filter.as_bytes()])
             {
                 Err(e) => Err(mlua::Error::ExternalError(Arc::new(e))),
@@ -220,7 +227,7 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
             },
         );
         reg.add_field_method_get("genotypes", |_lua: &Lua, this: &Variant| {
-            let genotypes = this.0.format(b"GT");
+            let genotypes = this.record.format(b"GT");
             match genotypes.integer() {
                 Ok(genotypes) => {
                     let sb = crate::genotypes::Genotypes(Arc::new(Mutex::new(
@@ -233,13 +240,13 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
         });
 
         reg.add_method("format", |lua: &Lua, this: &Variant, format: String| {
-            let fmt = this.0.format(format.as_bytes());
-            let typ = this.0.header().format_type(format.as_bytes());
+            let fmt = this.record.format(format.as_bytes());
+            let typ = this.record.header().format_type(format.as_bytes());
             let (typ, num) = match typ {
                 Err(e) => return Err(mlua::Error::ExternalError(Arc::new(e))),
                 Ok(typ) => typ,
             };
-            let n_samples = this.0.sample_count() as usize;
+            let n_samples = this.record.sample_count() as usize;
             let t = lua
                 .create_table_with_capacity(n_samples, 0)
                 .expect("error creating table");
@@ -311,7 +318,8 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
             "info",
             |lua: &Lua, this: &Variant, (key, index): (String, Option<usize>)| {
                 let bkey = key.as_bytes();
-                let mut info = this.0.info(bkey); /* only need mut for .flag */
+                let b = Buffer::new();
+                let mut info = this.record.info_shared_buffer(bkey, b);
                 let typ = this.info_type(&key);
                 let (typ, num) = match typ {
                     Err(e) => {
@@ -404,7 +412,7 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
         reg.add_method(
             "sample",
             |lua: &Lua, this: &Variant, sample_name: String| {
-                let sample_id = match this.0.header().sample_id(sample_name.as_bytes()) {
+                let sample_id = match this.record.header().sample_id(sample_name.as_bytes()) {
                     Some(id) => id,
                     None => {
                         let msg = format!("sample '{}' not found in VCF", sample_name);
@@ -414,12 +422,12 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                 // get all format fields for this sample.
                 let sample = lua.create_table().expect("error creating table");
 
-                this.0.header().header_records().iter().for_each(|r| {
+                this.record.header().header_records().iter().for_each(|r| {
                     if let bcf::header::HeaderRecord::Format { key: _, values } = r {
                         let tag = &values["ID"];
                         let tag_bytes = tag.as_bytes();
-                        let fmt = this.0.format(tag_bytes);
-                        let typ = this.0.header().format_type(tag_bytes);
+                        let fmt = this.record.format(tag_bytes);
+                        let typ = this.record.header().format_type(tag_bytes);
                         let (typ, num) = match typ {
                             Err(e) => {
                                 error!("format tag '{}' error: {:?}", tag, e);
