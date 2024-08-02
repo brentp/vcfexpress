@@ -1,27 +1,72 @@
-CSQ = {}
+
+local CSQ = {}
 CSQ.__index = CSQ
 
 function CSQ.new(fields, header)
-    -- if fields is a string then split on |
-    if type(fields) == "string" then
-        fields = string.split(fields, "|")
-    end
-    -- now fill a table with keys from header and values from fields
+    -- header is assumed to be a dictionary with field names as keys and their index as values
+    -- e.g. { Allele = 1, Consequence = 2, IMPACT = 3, cDNA_position = 4, AF = 5 }
     local self = setmetatable({}, CSQ)
-    for i, h in ipairs(header) do
-        self[h] = fields[i]
-    end
+    
+    self.raw_fields = fields
+    self.header = header
+    self.parsed_fields = nil  -- This will store the parsed fields when needed
+
     return self
 end
 
-function CSQ:__tostring()
-    local fields = {}
-    for k, v in pairs(self) do
-        if v ~= nil and v ~= "" then
-            table.insert(fields, k .. "=" .. v)
+function CSQ:parse_fields()
+    -- Ensure this function does not trigger __index recursively
+    if not rawget(self, "parsed_fields") then
+        if type(self.raw_fields) == "string" then
+            self.parsed_fields = string.split(self.raw_fields, "|")
+        else
+            self.parsed_fields = self.raw_fields
         end
     end
-    return table.concat(fields, ";")
+end
+
+function CSQ:__tostring()
+    -- Ensure fields are parsed before attempting to create a string representation
+    if not self.parsed_fields then
+        self:parse_fields()
+    end
+
+    -- Build the string representation by iterating over the header
+    local parts = {}
+    for name, index in pairs(self.header) do
+        local value = self.parsed_fields[index]
+        table.insert(parts, name .. ": " .. (value or "nil"))
+    end
+
+    return "{" .. table.concat(parts, ", ") .. "}"
+end
+
+function CSQ:__index(key)
+    -- Check if the key exists in the metatable (functions like parse_fields)
+    local value = rawget(CSQ, key)
+    if value then
+        return value
+    end
+
+    -- Access parsed_fields using rawget to avoid triggering __index
+    if not rawget(self, "parsed_fields") then
+        self:parse_fields()
+    end
+
+    -- Direct lookup for the field index
+    local field_index = rawget(self, "header")[key]
+    
+    if field_index ~= nil then
+        local field_value = rawget(self, "parsed_fields")[field_index]
+        if NUMBER_FIELDS and NUMBER_FIELDS[key] then
+            return tonumber(field_value)
+        else
+            return field_value
+        end
+    end
+
+    -- Use rawget to access the value without invoking __index
+    return rawget(self, key)
 end
 
 CSQS = {}
@@ -100,13 +145,6 @@ for _, field in ipairs(NUMBER_FIELDS) do
 end
 NUMBER_FIELDS = number_fields
 
-function CSQ:__index(key)
-    if NUMBER_FIELDS[key] then
-        return tonumber(self[key])
-    else
-        return self[key]
-    end
-end
 
 --[[
 
@@ -145,14 +183,19 @@ function parse_description(description)
 
             table.insert(result, value)
         end
-        return result
+        -- results is a table like { 'Consequence', 'Codons', 'Amino_acids', 'Gene', 'SYMBOL', 'Feature', 'EXON', 'PolyPhen', 'SIFT', 'Protein_position', 'BIOTYPE' }
+        -- convert here to a dictionary with the index as value
+        local header = {}
+        for i, v in ipairs(result) do
+            header[v] = i
+        end
+        return header
     else
         return nil, "Format part not found in description."
     end
 end
 
---[[
--- Example usage
+--[[ Example usage
 local input1 =
 '#INFO=<ID=CSQ,Number=.,Type=String,Description="Consequence type as predicted by VEP. Format: Consequence|Codons|Amino_acids|Gene|SYMBOL|Feature|EXON|PolyPhen|SIFT|Protein_position|BIOTYPE">'
 local input2 =
@@ -165,17 +208,17 @@ local parsed_table2 = parse_description(input2)
 local parsed_table3 = parse_description(input3)
 
 print("Parsed Table 1:")
-for i, v in ipairs(parsed_table1) do
+for i, v in pairs(parsed_table1) do
     print(i, v)
 end
 
 print("\nParsed Table 2:")
-for i, v in ipairs(parsed_table2) do
+for i, v in pairs(parsed_table2) do
     print(i, v)
 end
 
 print("\nParsed Table 3:")
-for i, v in ipairs(parsed_table3) do
+for i, v in pairs(parsed_table3) do
     print(i, v)
 end
 
@@ -187,4 +230,39 @@ for i, v in ipairs(parse_description(desc)) do
     print(i, v)
 end
 
+--]]
+
+
+--[[ Example data
+local header = { Allele = 1, Consequence = 2, IMPACT = 3, cDNA_position = 4, AF = 5 }
+local vals = "A|missense_variant|MODERATE|c.1A>G|1.1e-05"
+
+-- Test 1: Check lazy parsing by accessing one field
+local csq = CSQ.new(vals, header)
+
+assert(csq.Consequence == 'missense_variant', 'Expected: "missense_variant"')
+print(csq.AF)           -- Expected: "1.1e-05"
+
+-- Test 2: Ensure that the fields are only parsed once
+-- The `parsed_fields` table should be populated only after the first access
+local csq2 = CSQ.new(vals, header)
+assert(rawget(csq2, "parsed_fields") == nil, "Parsed fields should be nil before any access")
+
+local _ = csq2.IMPACT  -- Access a field to trigger parsing
+assert(csq2.parsed_fields ~= nil, "Parsed fields should be populated after first access")
+
+-- Test 3: Check conversion to number
+local csq3 = CSQ.new(vals, header)
+NUMBER_FIELDS = { AF = true }
+assert(csq3.AF == 1.1e-05, "AF should be converted to a number")
+
+
+-- Test 4: Test tostring method
+local csq4 = CSQ.new(vals, header)
+print(csq4.Allele)
+print(csq4.Consequence)
+print(csq4.IMPACT)
+print(csq4.cDNA_position)
+print(csq4.AF)
+--print(tostring(csq4))  -- Expected: "{Allele: A, Consequence: missense_variant, IMPACT: MODERATE, cDNA_position: c.1A>G, AF: 1.1e-05}"
 --]]
