@@ -5,7 +5,7 @@ pub mod genotypes;
 pub mod header;
 pub mod pprint;
 pub mod variant;
-pub mod vcfexpr;
+pub mod vcfexpress;
 
 pub fn register(lua: &mlua::Lua) -> mlua::Result<()> {
     variant::register_variant(lua)?;

@@ -8,8 +8,8 @@ use std::{collections::HashMap, hash::Hash, io::Write};
 
 use crate::variant::{HeaderMap, Variant};
 
-/// VCFExpr is the only entry-point for this library.
-pub struct VCFExpr<'lua> {
+/// VCFExpress is the only entry-point for this library.
+pub struct VCFExpress<'lua> {
     lua: &'lua Lua,
     vcf_reader: Option<bcf::Reader>,
     template: Option<mlua::Function<'lua>>,
@@ -122,8 +122,8 @@ enum InfoFormatValue {
     String(String),
 }
 
-impl<'lua> VCFExpr<'lua> {
-    /// Create a new VCFExpr object. This object will read a VCF file, evaluate a set of expressions.
+impl<'lua> VCFExpress<'lua> {
+    /// Create a new VCFExpress object. This object will read a VCF file, evaluate a set of expressions.
     /// The expressions should return a boolean. Evaluations will stop on the first true expression.
     /// If a template is provided, the template will be evaluated in the same scope as the expression and used
     /// to generate the text output. If no template is provided, the VCF record will be written to the output.
@@ -176,7 +176,7 @@ impl<'lua> VCFExpr<'lua> {
             Ok(())
         })?;
 
-        let info_exps = VCFExpr::load_info_expressions(lua, &mut hv, set_expression)?;
+        let info_exps = VCFExpress::load_info_expressions(lua, &mut hv, set_expression)?;
 
         let header = bcf::header::Header::from_template(&hv);
 
@@ -197,7 +197,7 @@ impl<'lua> VCFExpr<'lua> {
             EitherWriter::File(std::io::BufWriter::new(file))
         };
 
-        Ok(VCFExpr {
+        Ok(VCFExpress {
             lua,
             vcf_reader: Some(reader),
             template,

@@ -1,9 +1,9 @@
-# vcfexpr
+# vcfexpress
 
 > [!CAUTION]
-> While the output of VCFExpr should be reliable, the error messages might be lacking. Please [report](https://github.com/brentp/vcfexpr/issues).
+> While the output of vcfexpress should be reliable, the error messages might be lacking. Please [report](https://github.com/brentp/vcfexpress/issues).
 
-[![Rust](https://github.com/brentp/vcfexpr/actions/workflows/rust.yml/badge.svg)](https://github.com/brentp/vcfexpr/actions/workflows/rust.yml)
+[![Rust](https://github.com/brentp/vcfexpress/actions/workflows/rust.yml/badge.svg)](https://github.com/brentp/vcfexpress/actions/workflows/rust.yml)
 
 This is an experiment on how to implement user-expressions
 that can filter (and modify) a VCF and specify an output template.
@@ -17,22 +17,22 @@ where luau is lua with some extensions and very good speed.
 
 extract a single variant and output a bed of the variant:
 ```
-vcfexpr filter -e "return variant.id == 'rs2124717267'" \
+vcfexpress filter -e "return variant.id == 'rs2124717267'" \
     --template '{variant.chrom}\t{variant.start}\t{variant.stop}' -o var.bed $vcf
 ```
 ---
 filter based on INFO and write bcf:
 ```
-vcfexpr filter -e "return variant:info('AN') > 3000" \
+vcfexpress filter -e "return variant:info('AN') > 3000" \
    -o high_an.bcf $input_vcf
 ```
 
 ---
 check the sample fields to get variants where `all` samples have high DP.
-`all` is defined by `vcfexpr` (`any`, `filter` are also available).
+`all` is defined by `vcfexpress` (`any`, `filter` are also available).
 Users can load their own functions with `-l $lua_file`.
 ```
-vcfexpr filter \
+vcfexpress filter \
    -e 'return all(function (dp)  return dp > 10 end, variant:format("DP"))' \
    -o all-high-dp.bcf $input_vcf
 ```
@@ -42,7 +42,7 @@ get all of the FORMAT fields for a single sample into a lua table.
 find variant that are high-quality hom-alts.
 
 ```
-vcfexpr filter \
+vcfexpress filter \
    -e 's=variant:sample("NA12878"); return s.DP > 10 and s.GQ > 20 and s.GT[1] == 1 and s.GT[2] == 1' \
    -o output.bcf \
    input.vcf
@@ -57,7 +57,7 @@ header:add_info({ID="af_copy", Number=1, Description="adding a single field", Ty
 ```
 then run with:
 ```
-vcfexpr filter -p pre.lua -e 'return variant:format("AD")[1][2] > 0' \
+vcfexpress filter -p pre.lua -e 'return variant:format("AD")[1][2] > 0' \
    -s 'af_copy=return variant:info("AF", 0)' \
    input.vcf > output.vcf
 ```
@@ -134,7 +134,7 @@ pprint(sample)
 ```
 Filter a VCF/BCF and optionally print by template expression. If no template is given the output will be VCF/BCF
 
-Usage: vcfexpr filter [OPTIONS] <PATH>
+Usage: vcfexpress filter [OPTIONS] <PATH>
 
 Arguments:
   <PATH>  Path to input VCF or BCF file

@@ -1,11 +1,11 @@
 [package]
-name = "vcfexpr"
+name = "vcfexpress"
 version = "0.2.0"
 edition = "2021"
 authors = ["Brent Pedersen <bpederse@gmail.com>"]
 description = "A tool for filtering VCF files using Lua expressions"
 readme = "README.md"
-homepage = "https://github.com/brentp/vcfexpr"
+homepage = "https://github.com/brentp/vcfexpress"
 
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -27,11 +27,11 @@ parking_lot = { version = "0.12.3", features = ["arc_lock"] }
 libc = "0.2"
 
 [[bin]]
-name = "vcfexpr"
+name = "vcfexpress"
 src = "src/main.rs"
 
 [lib]
-name = "vcfexpr"
+name = "vcfexpress"
 src = "src/lib.rs"
 crate-type = ["rlib", "cdylib"]
 

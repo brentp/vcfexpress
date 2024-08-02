@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use mlua::Lua;
 use rust_htslib::bcf::Read;
 
-use vcfexpr::{variant::HeaderMap, vcfexpr::VCFExpr};
+use vcfexpress::{variant::HeaderMap, vcfexpress::VCFExpress};
 
 /// Args take the arguments for clap.
 /// Accept the path to VCF or BCF and the lua expressions
@@ -64,7 +64,7 @@ fn filter_main(
     env_logger::init();
     let lua = Lua::new();
 
-    let mut vcfexpr = VCFExpr::new(
+    let mut vcfexpr = VCFExpress::new(
         &lua,
         path,
         expressions,
