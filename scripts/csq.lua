@@ -195,74 +195,73 @@ function parse_description(description)
     end
 end
 
---[[ Example usage
-local input1 =
-'#INFO=<ID=CSQ,Number=.,Type=String,Description="Consequence type as predicted by VEP. Format: Consequence|Codons|Amino_acids|Gene|SYMBOL|Feature|EXON|PolyPhen|SIFT|Protein_position|BIOTYPE">'
-local input2 =
-'##INFO=<ID=EFF,Number=.,Type=String,Description="Predicted effects for this variant.Format: \'Effect ( Effect_Impact | Functional_Class | Codon_Change | Amino_Acid_change| Amino_Acid_length | Gene_Name | Gene_BioType | Coding | Transcript | Exon [ | ERRORS | WARNINGS ] )\'">'
-local input3 =
-'##INFO=<ID=ANN,Number=.,Type=String,Description="Functional annotations: \'Allele | Annotation | Annotation_Impact | Gene_Name | Gene_ID | Feature_Type | Feature_ID | Transcript_BioType | Rank | HGVS.c | HGVS.p | cDNA.pos / cDNA.length | CDS.pos / CDS.length | AA.pos / AA.length | Distance | ERRORS / WARNINGS / INFO\'">'
+if ({...})[1] == "test" then -- run as luau scripts/csq.lua -a test
 
-local parsed_table1 = parse_description(input1)
-local parsed_table2 = parse_description(input2)
-local parsed_table3 = parse_description(input3)
+    local input1 =
+    '#INFO=<ID=CSQ,Number=.,Type=String,Description="Consequence type as predicted by VEP. Format: Consequence|Codons|Amino_acids|Gene|SYMBOL|Feature|EXON|PolyPhen|SIFT|Protein_position|BIOTYPE">'
+    local input2 =
+    '##INFO=<ID=EFF,Number=.,Type=String,Description="Predicted effects for this variant.Format: \'Effect ( Effect_Impact | Functional_Class | Codon_Change | Amino_Acid_change| Amino_Acid_length | Gene_Name | Gene_BioType | Coding | Transcript | Exon [ | ERRORS | WARNINGS ] )\'">'
+    local input3 =
+    '##INFO=<ID=ANN,Number=.,Type=String,Description="Functional annotations: \'Allele | Annotation | Annotation_Impact | Gene_Name | Gene_ID | Feature_Type | Feature_ID | Transcript_BioType | Rank | HGVS.c | HGVS.p | cDNA.pos / cDNA.length | CDS.pos / CDS.length | AA.pos / AA.length | Distance | ERRORS / WARNINGS / INFO\'">'
 
-print("Parsed Table 1:")
-for i, v in pairs(parsed_table1) do
-    print(i, v)
+    local parsed_table1 = parse_description(input1)
+    local parsed_table2 = parse_description(input2)
+    local parsed_table3 = parse_description(input3)
+
+    print("Parsed Table 1:")
+    for i, v in pairs(parsed_table1) do
+        print(i, v)
+    end
+
+    print("\nParsed Table 2:")
+    for i, v in pairs(parsed_table2) do
+        print(i, v)
+    end
+
+    print("\nParsed Table 3:")
+    for i, v in pairs(parsed_table3) do
+        print(i, v)
+    end
+
+
+    desc =
+    'Functional annotations: \'Allele | Annotation | Annotation_Impact | Gene_Name | Gene_ID | Feature_Type | Feature_ID | Transcript_BioType | Rank | HGVS.c | HGVS.p | cDNA.pos / cDNA.length | CDS.pos / CDS.length | AA.pos / AA.length | Distance | ERRORS / WARNINGS / INFO\'"'
+
+    for i, v in ipairs(parse_description(desc)) do
+        print(i, v)
+    end
+
+
+
+    local header = { Allele = 1, Consequence = 2, IMPACT = 3, cDNA_position = 4, AF = 5 }
+    local vals = "A|missense_variant|MODERATE|c.1A>G|1.1e-05"
+
+    -- Test 1: Check lazy parsing by accessing one field
+    local csq = CSQ.new(vals, header)
+
+    assert(csq.Consequence == 'missense_variant', 'Expected: "missense_variant"')
+    print(csq.AF)           -- Expected: "1.1e-05"
+
+    -- Test 2: Ensure that the fields are only parsed once
+    -- The `parsed_fields` table should be populated only after the first access
+    local csq2 = CSQ.new(vals, header)
+    assert(rawget(csq2, "parsed_fields") == nil, "Parsed fields should be nil before any access")
+
+    local _ = csq2.IMPACT  -- Access a field to trigger parsing
+    assert(csq2.parsed_fields ~= nil, "Parsed fields should be populated after first access")
+
+    -- Test 3: Check conversion to number
+    local csq3 = CSQ.new(vals, header)
+    NUMBER_FIELDS = { AF = true }
+    assert(csq3.AF == 1.1e-05, "AF should be converted to a number")
+
+    -- Test 4: Test tostring method
+    local csq4 = CSQ.new(vals, header)
+    print(csq4.Allele)
+    print(csq4.Consequence)
+    print(csq4.IMPACT)
+    print(csq4.cDNA_position)
+    print(csq4.AF)
+    --print(tostring(csq4))  -- Expected: "{Allele: A, Consequence: missense_variant, IMPACT: MODERATE, cDNA_position: c.1A>G, AF: 1.1e-05}"
+
 end
-
-print("\nParsed Table 2:")
-for i, v in pairs(parsed_table2) do
-    print(i, v)
-end
-
-print("\nParsed Table 3:")
-for i, v in pairs(parsed_table3) do
-    print(i, v)
-end
-
-
-desc =
-'Functional annotations: \'Allele | Annotation | Annotation_Impact | Gene_Name | Gene_ID | Feature_Type | Feature_ID | Transcript_BioType | Rank | HGVS.c | HGVS.p | cDNA.pos / cDNA.length | CDS.pos / CDS.length | AA.pos / AA.length | Distance | ERRORS / WARNINGS / INFO\'"'
-
-for i, v in ipairs(parse_description(desc)) do
-    print(i, v)
-end
-
---]]
-
-
---[[ Example data
-local header = { Allele = 1, Consequence = 2, IMPACT = 3, cDNA_position = 4, AF = 5 }
-local vals = "A|missense_variant|MODERATE|c.1A>G|1.1e-05"
-
--- Test 1: Check lazy parsing by accessing one field
-local csq = CSQ.new(vals, header)
-
-assert(csq.Consequence == 'missense_variant', 'Expected: "missense_variant"')
-print(csq.AF)           -- Expected: "1.1e-05"
-
--- Test 2: Ensure that the fields are only parsed once
--- The `parsed_fields` table should be populated only after the first access
-local csq2 = CSQ.new(vals, header)
-assert(rawget(csq2, "parsed_fields") == nil, "Parsed fields should be nil before any access")
-
-local _ = csq2.IMPACT  -- Access a field to trigger parsing
-assert(csq2.parsed_fields ~= nil, "Parsed fields should be populated after first access")
-
--- Test 3: Check conversion to number
-local csq3 = CSQ.new(vals, header)
-NUMBER_FIELDS = { AF = true }
-assert(csq3.AF == 1.1e-05, "AF should be converted to a number")
-
-
--- Test 4: Test tostring method
-local csq4 = CSQ.new(vals, header)
-print(csq4.Allele)
-print(csq4.Consequence)
-print(csq4.IMPACT)
-print(csq4.cDNA_position)
-print(csq4.AF)
---print(tostring(csq4))  -- Expected: "{Allele: A, Consequence: missense_variant, IMPACT: MODERATE, cDNA_position: c.1A>G, AF: 1.1e-05}"
---]]
