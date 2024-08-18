@@ -25,6 +25,7 @@ log = "0.4.21"
 parking_lot = { version = "0.12.3", features = ["arc_lock"] }
 #libc = "0.2.153"
 libc = "0.2"
+mimalloc = "0.1.43"
 
 [[bin]]
 name = "vcfexpress"
