@@ -130,6 +130,7 @@ impl<'lua> VCFExpress<'lua> {
     /// The template is a [luau string template].
     ///
     /// [luau string template]: https://luau-lang.org/syntax#string-interpolation
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         lua: &'lua Lua,
         vcf_path: String,
@@ -138,7 +139,9 @@ impl<'lua> VCFExpress<'lua> {
         template: Option<String>,
         lua_prelude: Vec<String>,
         output: Option<String>,
+        sandbox: bool
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        lua.sandbox(sandbox)?;
         lua.load(crate::pprint::PPRINT).set_name("pprint").exec()?;
         lua.load(crate::pprint::PRELUDE)
             .set_name("prelude")
@@ -208,6 +211,12 @@ impl<'lua> VCFExpress<'lua> {
             variants_evaluated: 0,
             variants_passing: 0,
         })
+    }
+
+    /// Run the code in the luau sandboxed environment.
+    /// https://luau.org/sandbox
+    pub fn sandbox(&mut self, sandbox: bool) -> Result<(), mlua::prelude::LuaError> {
+            self.lua.sandbox(sandbox)
     }
 
     #[allow(clippy::type_complexity)]

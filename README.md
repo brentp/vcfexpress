@@ -30,7 +30,7 @@ vcfexpress filter -e "return variant:info('AN') > 3000" \
 ---
 check the sample fields to get variants where `all` samples have high DP.
 `all` is defined by `vcfexpress` (`any`, `filter` are also available).
-Users can load their own functions with `-l $lua_file`.
+Users can load their own functions with `-p $lua_file`.
 ```
 vcfexpress filter \
    -e 'return all(function (dp)  return dp > 10 end, variant:format("DP"))' \
@@ -143,16 +143,15 @@ Options:
   -e, --expression <EXPRESSION>
           boolean Lua expression(s) to filter the VCF or BCF file
   -s, --set-expression <SET_EXPRESSION>
-          expression(s) to set existing INFO fields (new ones can be added in prelude)
-          e.g. --set-expression "AFmax=math.max(variant:info('AF'), variant:info('AFx'))"
+          expression(s) to set existing INFO field(s) (new ones can be added in prelude) e.g. --set-expression "AFmax=math.max(variant:info('AF'), variant:info('AFx'))"
   -t, --template <TEMPLATE>
           template expression in luau: https://luau-lang.org/syntax#string-interpolation. e.g. '{variant.chrom}:{variant.pos}'
-  -l, --lua <LUA>
-          File(s) containing lua code to load. May contain functions that will be called by the expressions
   -p, --lua-prelude <LUA_PRELUDE>
-          File containing lua code to run once before any variants are processed
+          File(s) containing lua(u) code to run once before any variants are processed. `header` is available here to access or modify the header
   -o, --output <OUTPUT>
           Optional output file. Default is stdout
+  -b, --sandbox
+          Run lua code in https://luau.org/sandbox
   -h, --help
           Print help
 ```

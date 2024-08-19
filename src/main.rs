@@ -38,13 +38,7 @@ pub enum Commands {
         #[arg(short, long)]
         template: Option<String>,
 
-        /// File(s) containing lua code to load. May contain functions that will be called by the expressions.
-        /// Prefer to use `--lua_prelude` for code that should be run once before any variants are processed.
-        /// This option may be deprecated.
-        #[arg(short, long)]
-        lua: Vec<String>,
-
-        /// File(s) containing lua code to run once before any variants are processed.
+        /// File(s) containing lua(u) code to run once before any variants are processed.
         /// `header` is available here to access or modify the header.
         #[arg(short = 'p', long)]
         lua_prelude: Vec<String>,
@@ -52,6 +46,10 @@ pub enum Commands {
         /// Optional output file. Default is stdout.
         #[arg(short, long)]
         output: Option<String>,
+
+        /// Run lua code in https://luau.org/sandbox.
+        #[arg(short = 'b', long)]
+        sandbox: bool,
     },
 }
 
@@ -60,9 +58,9 @@ fn filter_main(
     expressions: Vec<String>,
     set_expression: Vec<String>,
     template: Option<String>,
-    lua_code: Vec<String>,
     lua_prelude: Vec<String>,
     output: Option<String>,
+    sandbox: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
     let lua = Lua::new();
@@ -75,10 +73,9 @@ fn filter_main(
         template,
         lua_prelude,
         output,
+        sandbox,
     )?;
-    for path in lua_code {
-        vcfexpr.add_lua_code(&path)?;
-    }
+
     let mut reader = vcfexpr.reader();
     let mut writer = vcfexpr.writer();
 
@@ -101,18 +98,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             expression,
             set_expression,
             template,
-            lua: lua_code,
             lua_prelude,
             output,
+            sandbox,
         }) => {
             filter_main(
                 path,
                 expression,
                 set_expression,
                 template,
-                lua_code,
                 lua_prelude,
                 output,
+                sandbox,
             )?;
         }
         None => {
