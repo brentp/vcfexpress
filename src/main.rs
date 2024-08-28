@@ -12,6 +12,15 @@ use vcfexpress::{variant::HeaderMap, vcfexpress::VCFExpress};
 /// Accept the path to VCF or BCF and the lua expressions
 #[derive(Parser)]
 #[command(version, about, author)]
+#[command(arg_required_else_help(true))]
+#[command(propagate_version = true)]
+#[command(help_template = "
+{name} {version}
+{author-with-newline}{about-with-newline}
+{usage-heading} {usage}
+
+{all-args}{after-help}
+")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -21,6 +30,14 @@ struct Cli {
 pub enum Commands {
     /// Filter a VCF/BCF and optionally print by template expression.
     /// If no template is given the output will be VCF/BCF
+   #[command(arg_required_else_help(true))]
+#[command(help_template = "
+{name} {version}
+{about-with-newline}
+{usage-heading} {usage}
+
+{all-args}{after-help}
+")]
     Filter {
         /// Path to input VCF or BCF file
         path: String,

@@ -1,6 +1,6 @@
 [package]
 name = "vcfexpress"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 authors = ["Brent Pedersen <bpederse@gmail.com>"]
 description = "A tool for filtering VCF files using Lua expressions"
@@ -26,6 +26,7 @@ parking_lot = { version = "0.12.3", features = ["arc_lock"] }
 #libc = "0.2.153"
 libc = "0.2"
 mimalloc = "0.1.43"
+rustc-hash = "2.0.0"
 
 [[bin]]
 name = "vcfexpress"

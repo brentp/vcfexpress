@@ -6,13 +6,13 @@ use rust_htslib::bcf::header::{TagLength, TagType};
 use rust_htslib::bcf::record::Buffer;
 use rust_htslib::bcf::{self};
 use rust_htslib::errors::Result;
+use rustc_hash::FxHashMap;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
 /// Variant also keeps a cache of info tags to avoid repeated lookups.
-pub struct HeaderMap(Rc<RefCell<HashMap<String, (TagType, TagLength)>>>);
+pub struct HeaderMap(Rc<RefCell<FxHashMap<String, (TagType, TagLength)>>>);
 
 impl Clone for HeaderMap {
     fn clone(&self) -> Self {
@@ -20,14 +20,9 @@ impl Clone for HeaderMap {
     }
 }
 
-pub struct Variant {
-    record: bcf::Record,
-    header_map: HeaderMap,
-}
-
 impl HeaderMap {
     pub fn new() -> Self {
-        HeaderMap(Rc::new(RefCell::new(HashMap::new())))
+        HeaderMap(Rc::new(RefCell::new(FxHashMap::default())))
     }
 }
 
@@ -35,6 +30,11 @@ impl Default for HeaderMap {
     fn default() -> Self {
         HeaderMap::new()
     }
+}
+
+pub struct Variant {
+    record: bcf::Record,
+    header_map: HeaderMap,
 }
 
 impl Variant {
