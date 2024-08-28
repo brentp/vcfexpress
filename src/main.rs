@@ -3,7 +3,6 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use clap::{Parser, Subcommand};
 
-use mlua::Lua;
 use rust_htslib::bcf::Read;
 
 use vcfexpress::{variant::HeaderMap, vcfexpress::VCFExpress};
@@ -12,6 +11,15 @@ use vcfexpress::{variant::HeaderMap, vcfexpress::VCFExpress};
 /// Accept the path to VCF or BCF and the lua expressions
 #[derive(Parser)]
 #[command(version, about, author)]
+#[command(arg_required_else_help(true))]
+#[command(propagate_version = true)]
+#[command(help_template = "
+{name} {version}
+{author-with-newline}{about-with-newline}
+{usage-heading} {usage}
+
+{all-args}{after-help}
+")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -21,6 +29,14 @@ struct Cli {
 pub enum Commands {
     /// Filter a VCF/BCF and optionally print by template expression.
     /// If no template is given the output will be VCF/BCF
+   #[command(arg_required_else_help(true))]
+#[command(help_template = "
+{name} {version}
+{about-with-newline}
+{usage-heading} {usage}
+
+{all-args}{after-help}
+")]
     Filter {
         /// Path to input VCF or BCF file
         path: String,
@@ -91,6 +107,11 @@ fn filter_main(
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize V8
+    let platform = v8::new_default_platform(0, false).make_shared();
+    v8::V8::initialize_platform(platform);
+    v8::V8::initialize();
+
     let args = Cli::parse();
     match args.command {
         Some(Commands::Filter {
@@ -116,5 +137,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("No command provided");
         }
     }
+
+    // Dispose V8 when done
+    unsafe {
+        v8::V8::dispose();
+    }
+    v8::V8::shutdown_platform();
     Ok(())
 }

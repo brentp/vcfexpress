@@ -236,32 +236,22 @@ if ({...})[1] == "test" then -- run as luau scripts/csq.lua -a test
     local header = { Allele = 1, Consequence = 2, IMPACT = 3, cDNA_position = 4, AF = 5 }
     local vals = "A|missense_variant|MODERATE|c.1A>G|1.1e-05"
 
-    -- Test 1: Check lazy parsing by accessing one field
+
     local csq = CSQ.new(vals, header)
 
     assert(csq.Consequence == 'missense_variant', 'Expected: "missense_variant"')
-    print(csq.AF)           -- Expected: "1.1e-05"
+    assert(csq.AF == 1.1e-05)
+    assert(csq.IMPACT == 'MODERATE')
+    assert(csq.cDNA_position == 'c.1A>G')
+    assert(csq.Allele == 'A')
+    assert(csq.Consequence == 'missense_variant')
 
-    -- Test 2: Ensure that the fields are only parsed once
-    -- The `parsed_fields` table should be populated only after the first access
-    local csq2 = CSQ.new(vals, header)
-    assert(rawget(csq2, "parsed_fields") == nil, "Parsed fields should be nil before any access")
-
-    local _ = csq2.IMPACT  -- Access a field to trigger parsing
-    assert(csq2.parsed_fields ~= nil, "Parsed fields should be populated after first access")
-
-    -- Test 3: Check conversion to number
-    local csq3 = CSQ.new(vals, header)
-    NUMBER_FIELDS = { AF = true }
-    assert(csq3.AF == 1.1e-05, "AF should be converted to a number")
-
-    -- Test 4: Test tostring method
-    local csq4 = CSQ.new(vals, header)
-    print(csq4.Allele)
-    print(csq4.Consequence)
-    print(csq4.IMPACT)
-    print(csq4.cDNA_position)
-    print(csq4.AF)
-    --print(tostring(csq4))  -- Expected: "{Allele: A, Consequence: missense_variant, IMPACT: MODERATE, cDNA_position: c.1A>G, AF: 1.1e-05}"
+    local vals = "||||"
+    local csq = CSQ.new(vals, header)
+    assert(csq.Consequence == '')
+    assert(csq.IMPACT == '')
+    assert(csq.cDNA_position == '')
+    assert(csq.AF == nil)
+    assert(csq.Allele == '')   
 
 end

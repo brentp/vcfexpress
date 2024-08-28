@@ -1,6 +1,6 @@
 [package]
 name = "vcfexpress"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 authors = ["Brent Pedersen <bpederse@gmail.com>"]
 description = "A tool for filtering VCF files using Lua expressions"
@@ -11,13 +11,8 @@ homepage = "https://github.com/brentp/vcfexpress"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-mlua = { version = "0.9.9", features = [
-    #"lua54",
-    "luau",
-    "send",
-    "parking_lot",
-    #"module",
-] }
+rusty_v8 = "0.32.1"
+# Remove mlua dependency
 rust-htslib = { version = "0.47.0", features = ["libdeflate", "static"] }
 clap = { version = "4.5.4", features = ["derive"] }
 env_logger = "0.11.3"
@@ -26,6 +21,7 @@ parking_lot = { version = "0.12.3", features = ["arc_lock"] }
 #libc = "0.2.153"
 libc = "0.2"
 mimalloc = "0.1.43"
+rustc-hash = "2.0.0"
 
 [[bin]]
 name = "vcfexpress"
