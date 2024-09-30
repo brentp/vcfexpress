@@ -1,6 +1,6 @@
 [package]
 name = "vcfexpress"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 authors = ["Brent Pedersen <bpederse@gmail.com>"]
 description = "A tool for filtering VCF files using Lua expressions"
