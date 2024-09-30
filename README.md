@@ -1,7 +1,7 @@
 # vcfexpress
 
 > [!CAUTION]
-> While the output of vcfexpress should be reliable, the error messages might be lacking. Please [report](https://github.com/brentp/vcfexpress/issues).
+> While the output of vcfexpress is tested and reliable, the error messages might be lacking. Please [report](https://github.com/brentp/vcfexpress/issues).
 
 [![Rust](https://github.com/brentp/vcfexpress/actions/workflows/rust.yml/badge.svg)](https://github.com/brentp/vcfexpress/actions/workflows/rust.yml)
 
