@@ -7,7 +7,11 @@
 
 This is an experiment on how to implement user-expressions
 that can filter (and modify) a VCF and specify an output template.
-It uses lua as the expression language. It is fast.
+It uses lua as the expression language. It is [fast](https://brentp.github.io/vcfexpress/speed.html)
+Because of the speed and flexibility, we can, for example implement
+[CSQ parsing](https://github.com/brentp/vcfexpress/blob/main/scripts/csq.lua) in lua,
+just as a user could. The resulting functionality is as [fast or faster](https://brentp.github.io/vcfexpress/speed.html) than other tools
+that have this built in.
 
 For the optional output template, it uses [luau string templates](https://luau-lang.org/syntax#string-interpolation)
 where luau is lua with some extensions and very good speed.
@@ -38,6 +42,16 @@ vcfexpress filter \
 ```
 ---
 
+Extract variants that are HIGH impact according to the `CSQ` field. This uses
+user-defind code to parse the CSQ field in scripts/csq.lua.
+```
+vcfexpress filter \
+   -e 'csqs = CSQS.new(variant:info("ANN"), desc); return csqs:any(function(c) return c["Annotation_Impact"] == "HIGH" end)' \
+   -o all-high-impact.bcf $input_vcf \
+   -p scripts/csq.lua -p scripts/pre.lua
+```
+---
+
 get all of the FORMAT fields for a single sample into a lua table.
 find variant that are high-quality hom-alts.
 
@@ -46,7 +60,7 @@ vcfexpress filter \
    -e 's=variant:sample("NA12878"); return s.DP > 10 and s.GQ > 20 and s.GT[1] == 1 and s.GT[2] == 1' \
    -o output.bcf \
    input.vcf
-``` 
+```
 
 ---
 
@@ -62,6 +76,9 @@ vcfexpress filter -p pre.lua -e 'return variant:format("AD")[1][2] > 0' \
    input.vcf > output.vcf
 ```
 
+# speed
+
+see [speed](https://brentp.github.io/vcfexpress/speed.html)
 
 
 # Attributes / Functions
@@ -80,9 +97,9 @@ variant.FILTER (get/set) -> string (only first one reported)
 variant.genotypes -> vec<Genotype>
 variant:format("field_name") -> vec<string|number>
 -- optional 0-based 2nd arg to info() gets just the desired index.
-variant:info("field_name") -> number|string|bool|vec<number|string|bool> 
+variant:info("field_name") -> number|string|bool|vec<number|string|bool>
 -- useful to pprint(variant:sample("mysample")) to see available fields.
-variant:sample("sample_name") -> table<string=any> 
+variant:sample("sample_name") -> table<string=any>
 tostring(variant) -> string -- tab-delimited vcf/variant output.
 
 genotypes = variant.genotypes
@@ -90,7 +107,7 @@ genotype = genotypes[i] -- get single genotype for 1 sample
 tostring(genotype) -- e.g. "0/1"
 genotype.alts -- integer for number of non-zero, non-unknown alleles
 
-allele = genotype[1] 
+allele = genotype[1]
 allele.phased -> bool
 allele.allele -> integer e.g. 0 for "0" allele
 
@@ -120,14 +137,14 @@ pprint(sample)
     [2] = 63,
     [3] = 945},
   -- this is the genotype phase.  so with GT, this is 0|1
-  .phase = { 
-    [1] = false, 
+  .phase = {
+    [1] = false,
     [2] = true}}
 --]]
 ```
 
 
-  
+
 
 # Usage
 
