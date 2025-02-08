@@ -5,7 +5,7 @@ use parking_lot::Mutex;
 use rust_htslib::bcf::header::{TagLength, TagType};
 use rust_htslib::bcf::record::{Buffer, BufferBacked};
 use rust_htslib::bcf::{self};
-use rust_htslib::errors::Result;
+use rust_htslib::errors::{Error, Result};
 use rustc_hash::FxHashMap;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -76,13 +76,11 @@ use log::{debug, log_enabled, Level};
 // NEW helper functions
 fn handle_format_integer<'lua>(
     lua: &'lua Lua,
-    v: Result<BufferBacked<'_, Vec<&[i32]>, Buffer>>,
+    v: &BufferBacked<'_, Vec<&[i32]>, Buffer>,
     num: &bcf::header::TagLength,
     sample_id: usize,
     tag_bytes: &[u8],
 ) -> mlua::Result<LuaValue<'lua>> {
-    let v = v.map_err(|e| mlua::Error::ExternalError(Arc::new(e)))?;
-
     match num {
         bcf::header::TagLength::Fixed(1) if tag_bytes != b"GT" => {
             Ok(Value::Integer(v[sample_id][0]))
@@ -99,12 +97,10 @@ fn handle_format_integer<'lua>(
 
 fn handle_format_float<'lua>(
     lua: &'lua Lua,
-    v: Result<BufferBacked<'_, Vec<&[f32]>, Buffer>>,
+    v: &BufferBacked<'_, Vec<&[f32]>, Buffer>,
     num: &bcf::header::TagLength,
     sample_id: usize,
 ) -> mlua::Result<LuaValue<'lua>> {
-    let v = v.map_err(|e| mlua::Error::ExternalError(Arc::new(e)))?;
-
     match num {
         bcf::header::TagLength::Fixed(1) => Ok(Value::Number(v[sample_id][0] as f64)),
         _ => {
@@ -119,13 +115,11 @@ fn handle_format_float<'lua>(
 
 fn handle_format_string<'lua>(
     lua: &'lua Lua,
-    v: Result<BufferBacked<'_, Vec<&[u8]>, Buffer>>,
+    v: &BufferBacked<'_, Vec<&[u8]>, Buffer>,
     num: &bcf::header::TagLength,
     sample_id: usize,
     tag: &str,
 ) -> mlua::Result<LuaValue<'lua>> {
-    let v = v.map_err(|e| mlua::Error::ExternalError(Arc::new(e)))?;
-
     match num {
         bcf::header::TagLength::Fixed(1) => Ok(Value::String(
             lua.create_string(unsafe { String::from_utf8_unchecked(v[sample_id].to_vec()) })
@@ -426,7 +420,7 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                 // get all format fields for this sample.
                 let sample = lua.create_table().expect("error creating table");
 
-                this.record.header().header_records().iter().for_each(|r| {
+                for r in this.record.header().header_records().iter() {
                     if let bcf::header::HeaderRecord::Format { key: _, values } = r {
                         let tag = &values["ID"];
                         let tag_bytes = tag.as_bytes();
@@ -435,7 +429,7 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                         let (typ, num) = match typ {
                             Err(e) => {
                                 error!("format tag '{}' error: {:?}", tag, e);
-                                return;
+                                continue;
                             }
                             Ok(typ) => typ,
                         };
@@ -443,18 +437,47 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                         // Call helper functions based on TagType
                         let value = match (typ, tag_bytes) {
                             (bcf::header::TagType::Integer, _)
-                            | (bcf::header::TagType::String, b"GT") => handle_format_integer(
-                                lua,
-                                fmt.integer(),
-                                &num,
-                                sample_id,
-                                tag_bytes,
-                            ),
+                            | (bcf::header::TagType::String, b"GT") => {
+                                let v = fmt.integer();
+                                match v {
+                                    Err(Error::BcfMissingTag { tag: _, record: _ }) => {
+                                        continue;
+                                    }
+                                    Err(e) => {
+                                        error!("format tag '{}' error: {:?}", tag, e);
+                                        continue;
+                                    }
+                                    Ok(v) => {
+                                        handle_format_integer(lua, &v, &num, sample_id, tag_bytes)
+                                            .map_err(|e| mlua::Error::ExternalError(Arc::new(e)))
+                                    }
+                                }
+                            }
                             (bcf::header::TagType::Float, _) => {
-                                handle_format_float(lua, fmt.float(), &num, sample_id)
+                                let v = fmt.float();
+                                match v {
+                                    Err(Error::BcfMissingTag { tag: _, record: _ }) => {
+                                        continue;
+                                    }
+                                    Err(e) => {
+                                        error!("format tag '{}' error: {:?}", tag, e);
+                                        continue;
+                                    }
+                                    Ok(v) => handle_format_float(lua, &v, &num, sample_id)
+                                        .map_err(|e| mlua::Error::ExternalError(Arc::new(e))),
+                                }
                             }
                             (bcf::header::TagType::String, _) => {
-                                handle_format_string(lua, fmt.string(), &num, sample_id, tag)
+                                let v = fmt.string();
+                                match v {
+                                    Err(Error::BcfMissingTag { tag: _, record: _ }) => continue,
+                                    Err(e) => {
+                                        error!("format tag '{}' error: {:?}", tag, e);
+                                        continue;
+                                    }
+                                    Ok(v) => handle_format_string(lua, &v, &num, sample_id, tag)
+                                        .map_err(|e| mlua::Error::ExternalError(Arc::new(e))),
+                                }
                             }
 
                             _ => Ok(Value::Nil),
@@ -463,7 +486,7 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                         if tag_bytes == b"GT" {
                             let gt = match value {
                                 Ok(Value::Table(ref t)) => t,
-                                _ => return,
+                                _ => continue,
                             };
                             let mut phases = vec![];
                             let mut alts = 0;
@@ -488,7 +511,7 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                             Err(e) => info!("format tag {} not found. {}", tag, e),
                         }
                     }
-                });
+                }
                 Ok(sample)
             },
         );
@@ -684,7 +707,9 @@ mod tests {
                     .set_name(expression)
                     .into_function()
                     .unwrap();
-                let result: String = exp.call(()).unwrap();
+                let result: String = exp
+                    .call(())
+                    .expect(&format!("error calling expression: {}", expression));
 
                 if result != expected_result {
                     eprintln!(
