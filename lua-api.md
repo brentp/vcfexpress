@@ -17,6 +17,7 @@ These functions are available globally for array/table operations:
 The main variant object provides access to VCF record data:
 
 ### Basic Attributes
+
 - `variant.chrom` (string): Chromosome name
 - `variant.pos` (integer, get/set): 0-based position
 - `variant.start` (integer): Start position (same as pos)
@@ -30,6 +31,7 @@ The main variant object provides access to VCF record data:
 - `variant.genotypes`: Array of genotype objects for all samples
 
 ### Methods
+
 - `variant:info(field_name, [index])`: Get INFO field value(s)
   - Returns number/string/bool/table depending on field type
   - Optional index parameter to get specific value for multi-value fields
@@ -38,17 +40,25 @@ The main variant object provides access to VCF record data:
 - `variant:sample(sample_name)`: Get all FORMAT fields for a specific sample
   - Returns table with format field values
   - Special handling for GT field to provide allele and phase information
+- `variant:samples()`: Get all FORMAT fields for all samples in a single call
+  - Returns table where keys are sample names and values are sample tables
+  - Each sample table has same structure as `variant:sample()` return value
+  - More efficient than calling `variant:sample()` multiple times
+  - Example: `samples = variant:samples(); dp = samples.NA12878.DP`
 
 ## Genotype Objects
 
 Accessed through `variant.genotypes[sample_index]`:
 
 ### Attributes
+
 - `genotype.alts`: Number of alternate alleles (non-reference, non-missing)
 - `tostring(genotype)`: String representation (e.g. "0/1" or "1|0")
 
 ### Individual Alleles
+
 Access through `genotype[index]`:
+
 - `allele.phased`: Boolean indicating if allele is phased
 - `allele.allele`: Integer value of allele (0=ref, 1=first alt, etc)
 
@@ -57,6 +67,7 @@ Access through `genotype[index]`:
 Accessed through `variant:sample(sample_name)`:
 
 ### Attributes
+
 - All FORMAT fields are available as direct attributes
 - `GT`: Special handling for genotype
   - Array of allele values (0-based)
@@ -72,9 +83,11 @@ Accessed through `variant:sample(sample_name)`:
 Available in prelude scripts for header manipulation:
 
 ### Attributes
+
 - `header.samples`: Array of sample names (get/set)
 
 ### Methods
+
 - `header:info_get(field_name)`: Get INFO field definition
 - `header:format_get(field_name)`: Get FORMAT field definition
 - `header:add_info({ID, Number, Type, Description})`: Add new INFO field
@@ -82,7 +95,9 @@ Available in prelude scripts for header manipulation:
 - `header:add_filter({ID, Description})`: Add new FILTER
 
 ### Field Definition Parameters
+
 When adding new fields:
+
 - `ID`: Field identifier
 - `Number`: Number of values ("1", "A", "R", "G", etc)
 - `Type`: Data type ("Integer", "Float", "String", "Flag")

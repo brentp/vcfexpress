@@ -5,7 +5,6 @@
 
 [![Rust](https://github.com/brentp/vcfexpress/actions/workflows/rust.yml/badge.svg)](https://github.com/brentp/vcfexpress/actions/workflows/rust.yml) [![DOI](https://zenodo.org/badge/786874644.svg)](https://doi.org/10.5281/zenodo.14756837)
 
-
 This is an experiment on how to implement user-expressions
 that can filter (and modify) a VCF and specify an output template.
 It uses lua as the expression language. It is [fast](https://brentp.github.io/vcfexpress/speed.html)
@@ -24,21 +23,23 @@ where luau is lua with some extensions and very good speed.
 
 # Examples
 
-Further examples are collected [here](examples/README.md) and we encourage users to suggest 
+Further examples are collected [here](examples/README.md) and we encourage users to suggest
 helpful examples or snippets.
 
 <details>
 <summary>Short functionality examples</summary>
 
-
 ---
 extract a single variant and output a bed of the variant:
+
 ```
 vcfexpress filter -e "return variant.id == 'rs2124717267'" \
     --template '{variant.chrom}\t{variant.start}\t{variant.stop}' -o var.bed $vcf
 ```
+
 ---
 filter based on INFO and write bcf:
+
 ```
 vcfexpress filter -e "return variant:info('AN') > 3000" \
    -o high_an.bcf $input_vcf
@@ -48,21 +49,25 @@ vcfexpress filter -e "return variant:info('AN') > 3000" \
 check the sample fields to get variants where `all` samples have high DP.
 `all` is defined by `vcfexpress` (`any`, `filter` are also available).
 Users can load their own functions with `-p $lua_file`.
+
 ```
 vcfexpress filter \
    -e 'return all(function (dp)  return dp > 10 end, variant:format("DP"))' \
    -o all-high-dp.bcf $input_vcf
 ```
+
 ---
 
 Extract variants that are HIGH impact according to the `CSQ` field. This uses
 user-defind code to parse the CSQ field in scripts/csq.lua.
+
 ```
 vcfexpress filter \
    -e 'csqs = CSQS.new(variant:info("ANN"), desc); return csqs:any(function(c) return c["Annotation_Impact"] == "HIGH" end)' \
    -o all-high-impact.bcf $input_vcf \
    -p scripts/csq.lua -p scripts/pre.lua
 ```
+
 ---
 
 get all of the FORMAT fields for a single sample into a lua table.
@@ -78,11 +83,14 @@ vcfexpress filter \
 ---
 
 add a new info field (`af_copy`) and set it.
+
 ```
 $ cat pre.lua
 header:add_info({ID="af_copy", Number=1, Description="adding a single field", Type="Float"})
 ```
+
 then run with:
+
 ```
 vcfexpress filter -p pre.lua -e 'return variant:format("AD")[1][2] > 0' \
    -s 'af_copy=return variant:info("AF", 0)' \
@@ -116,6 +124,8 @@ variant:format("field_name") -> vec<string|number>
 variant:info("field_name") -> number|string|bool|vec<number|string|bool>
 -- useful to pprint(variant:sample("mysample")) to see available fields.
 variant:sample("sample_name") -> table<string=any>
+-- get all samples at once, more efficient than calling sample() multiple times
+variant:samples() -> table<sample_name=table<string=any>>
 tostring(variant) -> string -- tab-delimited vcf/variant output.
 
 genotypes = variant.genotypes
@@ -158,7 +168,6 @@ pprint(sample)
     [2] = true}}
 --]]
 ```
-
 
 # Usage
 
