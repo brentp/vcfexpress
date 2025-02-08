@@ -125,7 +125,7 @@ variant:info("field_name") -> number|string|bool|vec<number|string|bool>
 -- useful to pprint(variant:sample("mysample")) to see available fields.
 variant:sample("sample_name") -> table<string=any>
 -- get all samples at once, more efficient than calling sample() multiple times
-variant:samples() -> table<sample_name=table<string=any>>
+variant:samples() -> table<sample_name=table<string=any>> -- e.g. s = variant:samples(); s.NA12878.DP
 tostring(variant) -> string -- tab-delimited vcf/variant output.
 
 genotypes = variant.genotypes

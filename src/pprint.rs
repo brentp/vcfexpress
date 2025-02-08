@@ -89,9 +89,13 @@ end
 
 pub const PRELUDE: &str = r#"
 function map(f, t, skip_nil)
+    local pair_fn =  ipairs
+    if #t == 0 then
+        pair_fn = pairs
+    end
     local new_t = {}
     local j = 1
-    for i, v in ipairs(t) do
+    for i, v in pair_fn(t) do
         if v ~= nil or not skip_nil then
             new_t[j] = f(v)
             j = j + 1
@@ -102,9 +106,13 @@ end
 
 -- note that this  uses ipairs so only the array portions of the table will be used
 function filter(f, t, skip_nil)
+    local pair_fn =  ipairs
+    if #t == 0 then
+        pair_fn = pairs
+    end
     local new_t = {}
     local j = 1
-    for i, v in ipairs(t) do
+    for i, v in pair_fn(t) do
         if v ~= nil or not skip_nil then
             if f(v) then
                 new_t[j] = v
@@ -117,7 +125,11 @@ end
 
 -- note that this  uses ipairs so only the array portions of the table will be used
 function all(f, t, skip_nil)
-    for i, v in ipairs(t) do
+    local pair_fn = ipairs
+    if #t == 0 then
+        pair_fn = pairs
+    end
+    for i, v in pair_fn(t) do
         if (v ~= nil or not skip_nil) and not f(v) then
             return false
         end
@@ -126,8 +138,13 @@ function all(f, t, skip_nil)
 end
 
 -- note that this  uses ipairs so only the array portions of the table will be used
+-- pair_fn is either ipairs or pairs
 function any(f, t, skip_nil)
-    for i, v in ipairs(t) do
+    local pair_fn = ipairs
+    if #t == 0 then
+        pair_fn = pairs
+    end
+    for i, v in pair_fn(t) do
         if (v ~= nil or not skip_nil) and f(v) then
             return true
         end

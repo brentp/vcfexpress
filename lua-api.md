@@ -6,11 +6,14 @@ This document details all Lua attributes and functions available when using VCFE
 
 These functions are available globally for array/table operations:
 
-- `map(function, table, skip_nil)`: Apply a function to each element in a table
-- `filter(function, table, skip_nil)`: Filter table elements based on a predicate function
-- `all(function, table, skip_nil)`: Check if all elements satisfy a predicate function
-- `any(function, table, skip_nil)`: Check if any element satisfies a predicate function
+- `map(function, table, [skip_nil])`: Apply a function to each element in a table
+- `filter(function, table, [skip_nil])`: Filter table elements based on a predicate function
+- `all(function, table, [skip_nil])`: Check if all elements satisfy a predicate function
+- `any(function, table, [skip_nil])`: Check if any element satisfies a predicate function
 - `pprint(table)`: Pretty print a table structure
+
+- `skip_nil` in the functions above means that values in the table that are `nil` will be skipped.
+- *NOTE* that for iteration, all of these functions will use `ipairs` if `#tbl > 0` and `pairs` otherwise.
 
 ## Variant Object
 
@@ -40,11 +43,6 @@ The main variant object provides access to VCF record data:
 - `variant:sample(sample_name)`: Get all FORMAT fields for a specific sample
   - Returns table with format field values
   - Special handling for GT field to provide allele and phase information
-- `variant:samples()`: Get all FORMAT fields for all samples in a single call
-  - Returns table where keys are sample names and values are sample tables
-  - Each sample table has same structure as `variant:sample()` return value
-  - More efficient than calling `variant:sample()` multiple times
-  - Example: `samples = variant:samples(); dp = samples.NA12878.DP`
 
 ## Genotype Objects
 
