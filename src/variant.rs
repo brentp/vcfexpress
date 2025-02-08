@@ -8,6 +8,7 @@ use rust_htslib::bcf::{self};
 use rust_htslib::errors::{Error, Result};
 use rustc_hash::FxHashMap;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -86,7 +87,9 @@ fn handle_format_integer<'lua>(
             Ok(Value::Integer(v[sample_id][0]))
         }
         _ => {
-            let t = lua.create_table().expect("error creating table");
+            let t = lua
+                .create_table_with_capacity(v[sample_id].len(), 0)
+                .expect("error creating table");
             for (i, val) in v[sample_id].iter().enumerate() {
                 t.raw_set(i + 1, *val).expect("error setting value");
             }
@@ -104,7 +107,9 @@ fn handle_format_float<'lua>(
     match num {
         bcf::header::TagLength::Fixed(1) => Ok(Value::Number(v[sample_id][0] as f64)),
         _ => {
-            let t = lua.create_table().expect("error creating table");
+            let t = lua
+                .create_table_with_capacity(v[sample_id].len(), 0)
+                .expect("error creating table");
             for (i, val) in v[sample_id].iter().enumerate() {
                 t.raw_set(i + 1, *val).expect("error setting value");
             }
@@ -518,8 +523,8 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
 
         reg.add_method(
             "samples",
-            |lua: &Lua, this: &Variant, fields: Option<mlua::Table>| {
-                let samples = lua.create_table().expect("error creating samples table");
+            |lua: &Lua, this: &Variant, fields: Option<HashMap<String, bool>>| {
+                let mut samples = HashMap::new();
                 let n_samples = this.record.sample_count() as usize;
 
                 // Create a table for each sample
@@ -531,10 +536,7 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                     .map(|s| unsafe { String::from_utf8_unchecked(s.to_vec()) })
                     .collect::<Vec<_>>();
                 for sample_name in sample_names.iter() {
-                    let sample = lua.create_table().expect("error creating sample table");
-                    samples
-                        .raw_set(sample_name.clone(), sample.clone())
-                        .expect("error setting sample");
+                    samples.insert(sample_name.to_string(), HashMap::new());
                 }
 
                 // Process all format fields
@@ -547,7 +549,7 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                         if tag_bytes != b"GT" {
                             if let Some(ref fields) = fields {
                                 let should_include =
-                                    fields.get::<_, bool>(tag.to_string()).unwrap_or(false);
+                                    fields.get(tag.to_string().as_str()).unwrap_or(&false);
                                 if !should_include {
                                     continue;
                                 }
@@ -577,10 +579,10 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                                     }
                                     Ok(v) => {
                                         for sample_id in 0..n_samples {
-                                            let sample_name = sample_names[sample_id].clone();
-                                            let sample: mlua::Table = samples
-                                                .get(sample_name)
-                                                .expect("error getting sample table");
+                                            let sample_name = &sample_names[sample_id];
+                                            let sample = samples
+                                                .get_mut(sample_name)
+                                                .expect("error getting sample map");
 
                                             let value = handle_format_integer(
                                                 lua, &v, &num, sample_id, tag_bytes,
@@ -589,7 +591,7 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
 
                                             if tag_bytes == b"GT" {
                                                 if let Value::Table(ref gt) = value {
-                                                    let mut phases = vec![];
+                                                    let mut phases = Vec::with_capacity(2);
                                                     let mut alts = 0;
                                                     for i in 1..=gt
                                                         .len()
@@ -604,17 +606,25 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                                                             "error setting value in GT table",
                                                         );
                                                     }
-                                                    sample
-                                                        .raw_set("phase", phases)
-                                                        .expect("error setting genotype phases");
-                                                    sample
-                                                        .raw_set("alts", alts)
-                                                        .expect("error setting genotype alts");
+                                                    let phases_table = lua
+                                                        .create_table()
+                                                        .expect("error creating table");
+                                                    for (i, phase) in phases.iter().enumerate() {
+                                                        phases_table
+                                                            .raw_set(i + 1, *phase)
+                                                            .expect("error setting phase");
+                                                    }
+                                                    sample.insert(
+                                                        "phase".to_string(),
+                                                        Value::Table(phases_table),
+                                                    );
+                                                    sample.insert(
+                                                        "alts".to_string(),
+                                                        Value::Integer(alts as i32),
+                                                    );
                                                 }
                                             }
-                                            sample
-                                                .raw_set(tag.to_string(), value)
-                                                .expect("error setting format value");
+                                            sample.insert(tag.to_string(), value);
                                         }
                                     }
                                 }
@@ -629,17 +639,15 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                                     }
                                     Ok(v) => {
                                         for sample_id in 0..n_samples {
-                                            let sample_name = sample_names[sample_id].clone();
-                                            let sample: mlua::Table = samples
-                                                .get(sample_name)
-                                                .expect("error getting sample table");
+                                            let sample_name = &sample_names[sample_id];
+                                            let sample = samples
+                                                .get_mut(sample_name)
+                                                .expect("error getting sample map");
 
                                             let value =
                                                 handle_format_float(lua, &v, &num, sample_id)
                                                     .expect("error handling float format");
-                                            sample
-                                                .raw_set(tag.to_string(), value)
-                                                .expect("error setting format value");
+                                            sample.insert(tag.to_string(), value);
                                         }
                                     }
                                 }
@@ -654,17 +662,15 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                                     }
                                     Ok(v) => {
                                         for sample_id in 0..n_samples {
-                                            let sample_name = sample_names[sample_id].clone();
-                                            let sample: mlua::Table = samples
-                                                .get(sample_name)
-                                                .expect("error getting sample table");
+                                            let sample_name = &sample_names[sample_id];
+                                            let sample = samples
+                                                .get_mut(sample_name)
+                                                .expect("error getting sample map");
 
                                             let value =
                                                 handle_format_string(lua, &v, &num, sample_id, tag)
                                                     .expect("error handling string format");
-                                            sample
-                                                .raw_set(tag.to_string(), value)
-                                                .expect("error setting format value");
+                                            sample.insert(tag.to_string(), value);
                                         }
                                     }
                                 }

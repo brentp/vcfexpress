@@ -16,6 +16,43 @@ vcfexpress filter -p examples/hwe.lua -e "hwe(variant) > 0.05" $vcf -o variants-
 </details>
 
 <details>
+<summary>Filter variants on calculated per-sample posterior genotype probability</summary>
+
+We can use genotype likelihoods to get a posterior probability for each genotype -- and therefore for the
+called genotype. We then filter to variants with a high (0.95+) probability of the called genotype.
+Here we require only that `any` samples meet that threshold.
+
+The relevant lua code in the functions loaded is:
+
+```lua
+    --- ... see full code in examples/gl_prob.lua
+    -- Compute sum of all likelihoods
+    local sum_L = 0
+    for i = 1, #GL do
+        sum_L = sum_L + 10 ^ GL[i]
+    end
+
+    -- Compute probability for the requested index
+    return (10 ^ GL[alts + 1]) / sum_L
+
+```
+
+Which gives scaled probabilities that sum to 1 across possible genotypes and returns the probability for the called genotype.
+
+```
+vcfexpress filter \
+    -p examples/gl_prob.lua \
+    -e 'return any(function(sm) return GT_prob(sm) > 0.95 end, variant:samples({GL=true}))' \
+    $vcf
+```
+
+Note that in cases like this where we access all samples for a given variant, `variant:samples()` will be much faster
+than calling `variant:sample()` for each sample iteratively. Using `variant:format('GL')` can be even faster, but returns
+a table (of tables) so is less convenient.
+
+</details>
+
+<details>
 <summary>Set the ID field of a variant</summary>
 
 we can set the ID field of the variant. here we use the following lua code in `examples/set-id-to-chrom-start-ref-alt.lua` to do so:

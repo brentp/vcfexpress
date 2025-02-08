@@ -6,4 +6,6 @@
   ```lua
 samples = variant:samples()
 samples.NA12878.alts == 1 and samples.NA12879.alts == 0 and samples.NA12878.DP > 20
+-- to only include some fields. here fields other than `DP` and `GT` are ignored
+samples = variant:samples({DP=true})
 ```

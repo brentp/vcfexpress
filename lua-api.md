@@ -43,6 +43,25 @@ The main variant object provides access to VCF record data:
 - `variant:sample(sample_name)`: Get all FORMAT fields for a specific sample
   - Returns table with format field values
   - Special handling for GT field to provide allele and phase information
+- `variant:samples([fields])`: Get FORMAT fields for all samples
+  - Returns table where keys are sample names and values are tables of format fields
+  - `fields` (optional): Table specifying which format fields to include (`{field_name=true}`)
+  - GT field is always included regardless of fields parameter
+  - For GT fields, includes `phase` (array of booleans) and `alts` (count of alt alleles)
+  - Example:
+
+    ```lua
+    -- Get all format fields
+    local samples = variant:samples()
+    print(samples.NA12878.GT[1])  -- First allele
+    print(samples.NA12878.DP)     -- Depth
+    
+    -- Get specific fields (GT always included)
+    local samples = variant:samples({DP=true, GQ=true})
+    print(samples.NA12878.DP)     -- Included
+    print(samples.NA12878.GT[1])  -- Always included
+    print(samples.NA12878.PL)     -- nil (not requested)
+    ```
 
 ## Genotype Objects
 
