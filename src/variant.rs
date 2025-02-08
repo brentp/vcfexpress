@@ -516,155 +516,166 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
             },
         );
 
-        reg.add_method("samples", |lua: &Lua, this: &Variant, _: ()| {
-            let samples = lua.create_table().expect("error creating samples table");
-            let n_samples = this.record.sample_count() as usize;
+        reg.add_method(
+            "samples",
+            |lua: &Lua, this: &Variant, fields: Option<mlua::Table>| {
+                let samples = lua.create_table().expect("error creating samples table");
+                let n_samples = this.record.sample_count() as usize;
 
-            // Create a table for each sample
-            let sample_names = this.record.header().samples();
-            for i in 0..n_samples {
-                let sample_name = unsafe { String::from_utf8_unchecked(sample_names[i].to_vec()) };
-                let sample = lua.create_table().expect("error creating sample table");
-                samples
-                    .raw_set(sample_name.clone(), sample.clone())
-                    .expect("error setting sample");
-            }
+                // Create a table for each sample
+                let sample_names = this
+                    .record
+                    .header()
+                    .samples()
+                    .iter()
+                    .map(|s| unsafe { String::from_utf8_unchecked(s.to_vec()) })
+                    .collect::<Vec<_>>();
+                for sample_name in sample_names.iter() {
+                    let sample = lua.create_table().expect("error creating sample table");
+                    samples
+                        .raw_set(sample_name.clone(), sample.clone())
+                        .expect("error setting sample");
+                }
 
-            // Process all format fields
-            for r in this.record.header().header_records().iter() {
-                if let bcf::header::HeaderRecord::Format { key: _, values } = r {
-                    let tag = &values["ID"];
-                    let tag_bytes = tag.as_bytes();
-                    let fmt = this.record.format(tag_bytes);
-                    let typ = this.record.header().format_type(tag_bytes);
-                    let (typ, num) = match typ {
-                        Err(e) => {
-                            error!("format tag '{}' error: {:?}", tag, e);
-                            continue;
-                        }
-                        Ok(typ) => typ,
-                    };
+                // Process all format fields
+                for r in this.record.header().header_records().iter() {
+                    if let bcf::header::HeaderRecord::Format { key: _, values } = r {
+                        let tag = &values["ID"];
+                        let tag_bytes = tag.as_bytes();
 
-                    // Process each format field type
-                    match (typ, tag_bytes) {
-                        (bcf::header::TagType::Integer, _)
-                        | (bcf::header::TagType::String, b"GT") => {
-                            let v = fmt.integer();
-                            match v {
-                                Err(Error::BcfMissingTag { tag: _, record: _ }) => continue,
-                                Err(e) => {
-                                    error!("format tag '{}' error: {:?}", tag, e);
+                        // Skip if not GT and not in requested fields
+                        if tag_bytes != b"GT" {
+                            if let Some(ref fields) = fields {
+                                let should_include =
+                                    fields.get::<_, bool>(tag.to_string()).unwrap_or(false);
+                                if !should_include {
                                     continue;
                                 }
-                                Ok(v) => {
-                                    for sample_id in 0..n_samples {
-                                        let sample_name = unsafe {
-                                            String::from_utf8_unchecked(
-                                                this.record.header().samples()[sample_id].to_vec(),
+                            }
+                        }
+
+                        let fmt = this.record.format(tag_bytes);
+                        let typ = this.record.header().format_type(tag_bytes);
+                        let (typ, num) = match typ {
+                            Err(e) => {
+                                error!("format tag '{}' error: {:?}", tag, e);
+                                continue;
+                            }
+                            Ok(typ) => typ,
+                        };
+
+                        // Process each format field type
+                        match (typ, tag_bytes) {
+                            (bcf::header::TagType::Integer, _)
+                            | (bcf::header::TagType::String, b"GT") => {
+                                let v = fmt.integer();
+                                match v {
+                                    Err(Error::BcfMissingTag { tag: _, record: _ }) => continue,
+                                    Err(e) => {
+                                        error!("format tag '{}' error: {:?}", tag, e);
+                                        continue;
+                                    }
+                                    Ok(v) => {
+                                        for sample_id in 0..n_samples {
+                                            let sample_name = sample_names[sample_id].clone();
+                                            let sample: mlua::Table = samples
+                                                .get(sample_name)
+                                                .expect("error getting sample table");
+
+                                            let value = handle_format_integer(
+                                                lua, &v, &num, sample_id, tag_bytes,
                                             )
-                                        };
-                                        let sample: mlua::Table = samples
-                                            .get(sample_name)
-                                            .expect("error getting sample table");
+                                            .expect("error handling integer format");
 
-                                        let value = handle_format_integer(
-                                            lua, &v, &num, sample_id, tag_bytes,
-                                        )
-                                        .expect("error handling integer format");
-
-                                        if tag_bytes == b"GT" {
-                                            if let Value::Table(ref gt) = value {
-                                                let mut phases = vec![];
-                                                let mut alts = 0;
-                                                for i in
-                                                    1..=gt.len().expect("error getting GT length")
-                                                {
-                                                    let allele = gt
-                                                        .get::<_, i64>(i)
-                                                        .expect("error getting allele");
-                                                    phases.push(allele & 1 == 1);
-                                                    alts += (allele >> 1) - 1;
-                                                    gt.raw_set(i, (allele >> 1) - 1)
-                                                        .expect("error setting value in GT table");
+                                            if tag_bytes == b"GT" {
+                                                if let Value::Table(ref gt) = value {
+                                                    let mut phases = vec![];
+                                                    let mut alts = 0;
+                                                    for i in 1..=gt
+                                                        .len()
+                                                        .expect("error getting GT length")
+                                                    {
+                                                        let allele = gt
+                                                            .get::<_, i64>(i)
+                                                            .expect("error getting allele");
+                                                        phases.push(allele & 1 == 1);
+                                                        alts += (allele >> 1) - 1;
+                                                        gt.raw_set(i, (allele >> 1) - 1).expect(
+                                                            "error setting value in GT table",
+                                                        );
+                                                    }
+                                                    sample
+                                                        .raw_set("phase", phases)
+                                                        .expect("error setting genotype phases");
+                                                    sample
+                                                        .raw_set("alts", alts)
+                                                        .expect("error setting genotype alts");
                                                 }
-                                                sample
-                                                    .raw_set("phase", phases)
-                                                    .expect("error setting genotype phases");
-                                                sample
-                                                    .raw_set("alts", alts)
-                                                    .expect("error setting genotype alts");
                                             }
+                                            sample
+                                                .raw_set(tag.to_string(), value)
+                                                .expect("error setting format value");
                                         }
-                                        sample
-                                            .raw_set(tag.to_string(), value)
-                                            .expect("error setting format value");
                                     }
                                 }
                             }
-                        }
-                        (bcf::header::TagType::Float, _) => {
-                            let v = fmt.float();
-                            match v {
-                                Err(Error::BcfMissingTag { tag: _, record: _ }) => continue,
-                                Err(e) => {
-                                    error!("format tag '{}' error: {:?}", tag, e);
-                                    continue;
-                                }
-                                Ok(v) => {
-                                    for sample_id in 0..n_samples {
-                                        let sample_name = unsafe {
-                                            String::from_utf8_unchecked(
-                                                this.record.header().samples()[sample_id].to_vec(),
-                                            )
-                                        };
-                                        let sample: mlua::Table = samples
-                                            .get(sample_name)
-                                            .expect("error getting sample table");
+                            (bcf::header::TagType::Float, _) => {
+                                let v = fmt.float();
+                                match v {
+                                    Err(Error::BcfMissingTag { tag: _, record: _ }) => continue,
+                                    Err(e) => {
+                                        error!("format tag '{}' error: {:?}", tag, e);
+                                        continue;
+                                    }
+                                    Ok(v) => {
+                                        for sample_id in 0..n_samples {
+                                            let sample_name = sample_names[sample_id].clone();
+                                            let sample: mlua::Table = samples
+                                                .get(sample_name)
+                                                .expect("error getting sample table");
 
-                                        let value = handle_format_float(lua, &v, &num, sample_id)
-                                            .expect("error handling float format");
-                                        sample
-                                            .raw_set(tag.to_string(), value)
-                                            .expect("error setting format value");
+                                            let value =
+                                                handle_format_float(lua, &v, &num, sample_id)
+                                                    .expect("error handling float format");
+                                            sample
+                                                .raw_set(tag.to_string(), value)
+                                                .expect("error setting format value");
+                                        }
                                     }
                                 }
                             }
-                        }
-                        (bcf::header::TagType::String, _) => {
-                            let v = fmt.string();
-                            match v {
-                                Err(Error::BcfMissingTag { tag: _, record: _ }) => continue,
-                                Err(e) => {
-                                    error!("format tag '{}' error: {:?}", tag, e);
-                                    continue;
-                                }
-                                Ok(v) => {
-                                    for sample_id in 0..n_samples {
-                                        let sample_name = unsafe {
-                                            String::from_utf8_unchecked(
-                                                this.record.header().samples()[sample_id].to_vec(),
-                                            )
-                                        };
-                                        let sample: mlua::Table = samples
-                                            .get(sample_name)
-                                            .expect("error getting sample table");
+                            (bcf::header::TagType::String, _) => {
+                                let v = fmt.string();
+                                match v {
+                                    Err(Error::BcfMissingTag { tag: _, record: _ }) => continue,
+                                    Err(e) => {
+                                        error!("format tag '{}' error: {:?}", tag, e);
+                                        continue;
+                                    }
+                                    Ok(v) => {
+                                        for sample_id in 0..n_samples {
+                                            let sample_name = sample_names[sample_id].clone();
+                                            let sample: mlua::Table = samples
+                                                .get(sample_name)
+                                                .expect("error getting sample table");
 
-                                        let value =
-                                            handle_format_string(lua, &v, &num, sample_id, tag)
-                                                .expect("error handling string format");
-                                        sample
-                                            .raw_set(tag.to_string(), value)
-                                            .expect("error setting format value");
+                                            let value =
+                                                handle_format_string(lua, &v, &num, sample_id, tag)
+                                                    .expect("error handling string format");
+                                            sample
+                                                .raw_set(tag.to_string(), value)
+                                                .expect("error setting format value");
+                                        }
                                     }
                                 }
                             }
+                            _ => continue,
                         }
-                        _ => continue,
                     }
                 }
-            }
-            Ok(samples)
-        });
+                Ok(samples)
+            },
+        );
     })
 }
 
@@ -862,6 +873,45 @@ mod tests {
             (r#"s=variant:samples(); return s.NA12878.HQ[2]"#, "20"),
             (r#"s=variant:samples(); return s.NA12879.HQ[1]"#, "30"),
             (r#"s=variant:samples(); return s.NA12879.HQ[2]"#, "40"),
+            // Test samples() method with field filtering
+            (r#"s=variant:samples({DP=true}); return s.NA12878.DP"#, "11"),
+            (r#"s=variant:samples({DP=true}); return s.NA12879.DP"#, "12"),
+            // Test that GT is always included even when not specified
+            (
+                r#"s=variant:samples({DP=true}); return s.NA12878.GT[1]"#,
+                "0",
+            ),
+            (
+                r#"s=variant:samples({DP=true}); return s.NA12878.GT[2]"#,
+                "1",
+            ),
+            // Test that non-requested fields are not included
+            (
+                r#"s=variant:samples({DP=true}); return tostring(s.NA12878.GQ)"#,
+                "nil",
+            ),
+            (
+                r#"s=variant:samples({DP=true}); return tostring(s.NA12878.HQ)"#,
+                "nil",
+            ),
+            // Test multiple requested fields
+            (
+                r#"s=variant:samples({DP=true,GQ=true}); return s.NA12878.GQ"#,
+                "40",
+            ),
+            (
+                r#"s=variant:samples({DP=true,GQ=true}); return s.NA12879.GQ"#,
+                "50",
+            ),
+            // Test that phase and alts are included with GT
+            (
+                r#"s=variant:samples({DP=true}); return tostring(s.NA12878.phase[2])"#,
+                "true",
+            ),
+            (
+                r#"s=variant:samples({DP=true}); return s.NA12878.alts"#,
+                "1",
+            ),
         ];
 
         lua.scope(|scope| {
