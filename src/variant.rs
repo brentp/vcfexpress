@@ -3,7 +3,7 @@ use mlua::prelude::LuaValue;
 use mlua::{AnyUserData, Lua, MetaMethod, UserDataFields, UserDataMethods, Value};
 use parking_lot::Mutex;
 use rust_htslib::bcf::header::{TagLength, TagType};
-use rust_htslib::bcf::record::Buffer;
+use rust_htslib::bcf::record::{Buffer, BufferBacked};
 use rust_htslib::bcf::{self};
 use rust_htslib::errors::Result;
 use rustc_hash::FxHashMap;
@@ -72,6 +72,71 @@ impl Variant {
 }
 
 use log::{debug, log_enabled, Level};
+
+// NEW helper functions
+fn handle_format_integer<'lua>(
+    lua: &'lua Lua,
+    v: Result<BufferBacked<'_, Vec<&[i32]>, Buffer>>,
+    num: &bcf::header::TagLength,
+    sample_id: usize,
+    tag_bytes: &[u8],
+) -> mlua::Result<LuaValue<'lua>> {
+    let v = v.map_err(|e| mlua::Error::ExternalError(Arc::new(e)))?;
+
+    match num {
+        bcf::header::TagLength::Fixed(1) if tag_bytes != b"GT" => {
+            Ok(Value::Integer(v[sample_id][0]))
+        }
+        _ => {
+            let t = lua.create_table().expect("error creating table");
+            for (i, val) in v[sample_id].iter().enumerate() {
+                t.raw_set(i + 1, *val).expect("error setting value");
+            }
+            Ok(Value::Table(t))
+        }
+    }
+}
+
+fn handle_format_float<'lua>(
+    lua: &'lua Lua,
+    v: Result<BufferBacked<'_, Vec<&[f32]>, Buffer>>,
+    num: &bcf::header::TagLength,
+    sample_id: usize,
+) -> mlua::Result<LuaValue<'lua>> {
+    let v = v.map_err(|e| mlua::Error::ExternalError(Arc::new(e)))?;
+
+    match num {
+        bcf::header::TagLength::Fixed(1) => Ok(Value::Number(v[sample_id][0] as f64)),
+        _ => {
+            let t = lua.create_table().expect("error creating table");
+            for (i, val) in v[sample_id].iter().enumerate() {
+                t.raw_set(i + 1, *val).expect("error setting value");
+            }
+            Ok(Value::Table(t))
+        }
+    }
+}
+
+fn handle_format_string<'lua>(
+    lua: &'lua Lua,
+    v: Result<BufferBacked<'_, Vec<&[u8]>, Buffer>>,
+    num: &bcf::header::TagLength,
+    sample_id: usize,
+    tag: &str,
+) -> mlua::Result<LuaValue<'lua>> {
+    let v = v.map_err(|e| mlua::Error::ExternalError(Arc::new(e)))?;
+
+    match num {
+        bcf::header::TagLength::Fixed(1) => Ok(Value::String(
+            lua.create_string(unsafe { String::from_utf8_unchecked(v[sample_id].to_vec()) })
+                .expect("error creating string"),
+        )),
+        _ => {
+            warn!("string format tag {} is not fixed length", tag);
+            Ok(Value::Nil)
+        }
+    }
+}
 
 pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
     lua.register_userdata_type::<Variant>(|reg| {
@@ -250,7 +315,7 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
             let t = lua
                 .create_table_with_capacity(n_samples, 0)
                 .expect("error creating table");
-            return match typ {
+            match typ {
                 bcf::header::TagType::Integer => fmt
                     .integer()
                     .map(|v| {
@@ -311,7 +376,7 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                 )),
 
                 _ => unimplemented!("format type {:?}", typ),
-            };
+            }
         });
 
         reg.add_method(
@@ -328,85 +393,24 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                     }
                     Ok(typ) => typ,
                 };
-                return match typ {
+                match typ {
                     bcf::header::TagType::Integer => info
                         .integer()
-                        .map(|v| match v {
-                            Some(v) => match (num, index) {
-                                (bcf::header::TagLength::Fixed(1), None) => {
-                                    Ok::<LuaValue<'_>, mlua::Error>(Value::Integer(v[0]))
-                                }
-                                (_, Some(i)) => {
-                                    Ok::<LuaValue<'_>, mlua::Error>(Value::Integer(v[i]))
-                                }
-
-                                _ => {
-                                    let t = lua.create_table().expect("error creating table");
-                                    for (i, val) in v.iter().enumerate() {
-                                        t.raw_set(i + 1, *val).expect("error setting value");
-                                    }
-                                    Ok::<LuaValue<'_>, mlua::Error>(Value::Table(t))
-                                }
-                            },
-                            None => Ok(Value::Nil),
-                        })
+                        .map(|v| handle_integer_info(lua, v, num, index))
                         .map_err(|e| mlua::Error::ExternalError(Arc::new(e))),
                     bcf::header::TagType::Float => info
                         .float()
-                        .map(|v| match v {
-                            Some(v) => match (num, index) {
-                                (bcf::header::TagLength::Fixed(1), None) => {
-                                    Ok::<LuaValue<'_>, mlua::Error>(Value::Number(v[0] as f64))
-                                }
-                                (_, Some(i)) => {
-                                    Ok::<LuaValue<'_>, mlua::Error>(Value::Number(v[i] as f64))
-                                }
-                                _ => {
-                                    let t = lua.create_table().expect("error creating table");
-                                    for (i, val) in v.iter().enumerate() {
-                                        t.raw_set(i + 1, *val as f64).expect("error setting value");
-                                    }
-                                    Ok::<LuaValue<'_>, mlua::Error>(Value::Table(t))
-                                }
-                            },
-                            None => Ok(Value::Nil),
-                        })
+                        .map(|v| handle_float_info(lua, v, num, index))
                         .map_err(|e| mlua::Error::ExternalError(Arc::new(e))),
                     bcf::header::TagType::String => info
                         .string()
-                        .map(|v| match v {
-                            Some(v) => match (num, index) {
-                                (bcf::header::TagLength::Fixed(1), None) => {
-                                    Ok::<LuaValue<'_>, mlua::Error>(Value::String(
-                                        lua.create_string(unsafe {
-                                            String::from_utf8_unchecked(v[0].to_vec())
-                                        })?,
-                                    ))
-                                }
-                                (_, Some(i)) => Ok::<LuaValue<'_>, mlua::Error>(Value::String(
-                                    lua.create_string(unsafe {
-                                        String::from_utf8_unchecked(v[i].to_vec())
-                                    })?,
-                                )),
-                                _ => {
-                                    let t = lua.create_table().expect("error creating table");
-                                    for (i, s) in v.iter().enumerate() {
-                                        t.raw_set(i + 1, unsafe {
-                                            String::from_utf8_unchecked(s.to_vec())
-                                        })
-                                        .expect("error setting value");
-                                    }
-                                    Ok::<LuaValue<'_>, mlua::Error>(Value::Table(t))
-                                }
-                            },
-                            None => Ok(Value::Nil),
-                        })
+                        .map(|v| handle_string_info(lua, v, num, index))
                         .map_err(|e| mlua::Error::ExternalError(Arc::new(e))),
                     bcf::header::TagType::Flag => info
                         .flag()
                         .map(|v| Ok::<LuaValue<'_>, mlua::Error>(Value::Boolean(v)))
                         .map_err(|e| mlua::Error::ExternalError(Arc::new(e))),
-                };
+                }
             },
         );
         reg.add_method(
@@ -435,55 +439,27 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                             }
                             Ok(typ) => typ,
                         };
+
+                        // Call helper functions based on TagType
                         let value = match (typ, tag_bytes) {
                             (bcf::header::TagType::Integer, _)
-                            | (bcf::header::TagType::String, b"GT") => fmt
-                                .integer()
-                                .map(|v| match num {
-                                    bcf::header::TagLength::Fixed(1) if tag_bytes != b"GT" => {
-                                        Value::Integer(v[sample_id][0])
-                                    }
-                                    _ => {
-                                        let t = lua.create_table().expect("error creating table");
-                                        for (i, val) in v[sample_id].iter().enumerate() {
-                                            t.raw_set(i + 1, *val).expect("error setting value");
-                                        }
-                                        Value::Table(t)
-                                    }
-                                })
-                                .map_err(|e| mlua::Error::ExternalError(Arc::new(e))),
-                            (bcf::header::TagType::Float, _) => fmt
-                                .float()
-                                .map(|v| match num {
-                                    bcf::header::TagLength::Fixed(1) => {
-                                        Value::Number(v[sample_id][0] as f64)
-                                    }
-                                    _ => {
-                                        let t = lua.create_table().expect("error creating table");
-                                        for (i, val) in v[sample_id].iter().enumerate() {
-                                            t.raw_set(i + 1, *val).expect("error setting value");
-                                        }
-                                        Value::Table(t)
-                                    }
-                                })
-                                .map_err(|e| mlua::Error::ExternalError(Arc::new(e))),
-                            (bcf::header::TagType::String, _) => fmt
-                                .string()
-                                .map(|v| match num {
-                                    bcf::header::TagLength::Fixed(1) => Value::String(
-                                        lua.create_string(unsafe {
-                                            String::from_utf8_unchecked(v[sample_id].to_vec())
-                                        })
-                                        .expect("error creating string"),
-                                    ),
-                                    _ => {
-                                        warn!("string format tag {} is not fixed length", tag);
-                                        Value::Nil
-                                    }
-                                })
-                                .map_err(|e| mlua::Error::ExternalError(Arc::new(e))),
+                            | (bcf::header::TagType::String, b"GT") => handle_format_integer(
+                                lua,
+                                fmt.integer(),
+                                &num,
+                                sample_id,
+                                tag_bytes,
+                            ),
+                            (bcf::header::TagType::Float, _) => {
+                                handle_format_float(lua, fmt.float(), &num, sample_id)
+                            }
+                            (bcf::header::TagType::String, _) => {
+                                handle_format_string(lua, fmt.string(), &num, sample_id, tag)
+                            }
+
                             _ => Ok(Value::Nil),
                         };
+
                         if tag_bytes == b"GT" {
                             let gt = match value {
                                 Ok(Value::Table(ref t)) => t,
@@ -519,6 +495,80 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
     })
 }
 
+fn handle_integer_info<'lua>(
+    lua: &'lua Lua,
+    v: Option<BufferBacked<'_, &[i32], Buffer>>,
+    num: TagLength,
+    index: Option<usize>,
+) -> mlua::Result<LuaValue<'lua>> {
+    match v {
+        Some(v) => match (num, index) {
+            (bcf::header::TagLength::Fixed(1), None) => Ok(Value::Integer(v[0])),
+            (_, Some(i)) => Ok(Value::Integer(v[i])),
+            _ => {
+                let t = lua.create_table()?;
+                for (i, val) in v.iter().enumerate() {
+                    t.raw_set(i + 1, *val)?;
+                }
+                Ok(Value::Table(t))
+            }
+        },
+        None => Ok(Value::Nil),
+    }
+}
+
+fn handle_float_info<'lua>(
+    lua: &'lua Lua,
+    v: Option<BufferBacked<'_, &[f32], Buffer>>,
+    num: TagLength,
+    index: Option<usize>,
+) -> mlua::Result<LuaValue<'lua>> {
+    match v {
+        Some(v) => match (num, index) {
+            (bcf::header::TagLength::Fixed(1), None) => Ok(Value::Number(f64::from(v[0]))),
+            (_, Some(i)) => Ok(Value::Number(f64::from(v[i]))),
+            _ => {
+                let t = lua.create_table()?;
+                for (i, val) in v.iter().enumerate() {
+                    t.raw_set(i + 1, f64::from(*val))?;
+                }
+                Ok(Value::Table(t))
+            }
+        },
+        None => Ok(Value::Nil),
+    }
+}
+
+fn handle_string_info<'lua>(
+    lua: &'lua Lua,
+    v: Option<BufferBacked<'_, Vec<&[u8]>, Buffer>>,
+    num: TagLength,
+    index: Option<usize>,
+) -> mlua::Result<LuaValue<'lua>> {
+    match v {
+        Some(v) => match (num, index) {
+            (bcf::header::TagLength::Fixed(1), None) => {
+                Ok(Value::String(lua.create_string(unsafe {
+                    String::from_utf8_unchecked(v[0].to_vec())
+                })?))
+            }
+            (_, Some(i)) => {
+                Ok(Value::String(lua.create_string(unsafe {
+                    String::from_utf8_unchecked(v[i].to_vec())
+                })?))
+            }
+            _ => {
+                let t = lua.create_table()?;
+                for (i, s) in v.iter().enumerate() {
+                    t.raw_set(i + 1, unsafe { String::from_utf8_unchecked(s.to_vec()) })?;
+                }
+                Ok(Value::Table(t))
+            }
+        },
+        None => Ok(Value::Nil),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -532,6 +582,19 @@ mod tests {
         header.push_record(r#"##contig=<ID=chr1,length=10000>"#.as_bytes());
         header.push_record(
             r#"##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">"#.as_bytes(),
+        );
+        // Add Format fields for testing
+        header.push_record(
+            r#"##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read Depth">"#.as_bytes(),
+        );
+        header.push_record(
+            r#"##FORMAT=<ID=GQ,Number=1,Type=Float,Description="Genotype Quality">"#.as_bytes(),
+        );
+        header.push_record(
+            r#"##FORMAT=<ID=HQ,Number=2,Type=Integer,Description="Haplotype Quality">"#.as_bytes(),
+        );
+        header.push_record(
+            r#"##FORMAT=<ID=SQ,Number=1,Type=String,Description="String Quality">"#.as_bytes(),
         );
         header.push_record(r#"##FILTER=<ID=PASS,Description="All filters passed">"#.as_bytes());
         header.push_record(
@@ -554,6 +617,14 @@ mod tests {
             bcf::record::GenotypeAllele::Unphased(1),
         ];
         record.push_genotypes(alleles).unwrap();
+
+        // Push sample-specific format data.
+        record.push_format_integer(b"DP", &[11, 12]).unwrap();
+        record.push_format_float(b"GQ", &[40.0, 50.0]).unwrap();
+        record
+            .push_format_integer(b"HQ", &[10, 20, 30, 40])
+            .unwrap(); // 2 values per sample
+                       //record.push_format_string(b"SQ", &[b"abc", b"def"]).unwrap();
 
         (lua, Variant::new(record, HeaderMap::new()))
     }
@@ -584,6 +655,23 @@ mod tests {
                 "true",
             ),
             // Add more expressions and expected results here...
+            // Test Integer Format Field
+            (r#"s=variant:sample('NA12878'); return s.DP"#, "11"),
+            (r#"s=variant:sample('NA12879'); return s.DP"#, "12"),
+            // Test Float Format Field
+            (
+                r#"s=variant:sample('NA12878'); return s.GQ"#,
+                "40", // Lua converts to string
+            ),
+            (r#"s=variant:sample('NA12879'); return s.GQ"#, "50"),
+            // Test String Format Field
+            //(r#"s=variant:sample('NA12878'); return s.SQ"#, "abc"),
+            //(r#"s=variant:sample('NA12879'); return s.SQ"#, "def"),
+            // Test multi-value Integer Format Field
+            (r#"s=variant:sample('NA12878'); return s.HQ[1]"#, "10"),
+            (r#"s=variant:sample('NA12878'); return s.HQ[2]"#, "20"),
+            (r#"s=variant:sample('NA12879'); return s.HQ[1]"#, "30"),
+            (r#"s=variant:sample('NA12879'); return s.HQ[2]"#, "40"),
         ];
 
         lua.scope(|scope| {
