@@ -139,7 +139,7 @@ impl<'lua> VCFExpress<'lua> {
         template: Option<String>,
         lua_prelude: Vec<String>,
         output: Option<String>,
-        sandbox: bool
+        sandbox: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         lua.sandbox(sandbox)?;
         lua.load(crate::pprint::PPRINT).set_name("pprint").exec()?;
@@ -216,7 +216,7 @@ impl<'lua> VCFExpress<'lua> {
     /// Run the code in the luau sandboxed environment.
     /// https://luau.org/sandbox
     pub fn sandbox(&mut self, sandbox: bool) -> Result<(), mlua::prelude::LuaError> {
-            self.lua.sandbox(sandbox)
+        self.lua.sandbox(sandbox)
     }
 
     #[allow(clippy::type_complexity)]
@@ -314,6 +314,7 @@ impl<'lua> VCFExpress<'lua> {
     pub fn evaluate(
         &mut self,
         record: bcf::Record,
+        header: &bcf::header::HeaderView,
         header_map: HeaderMap,
     ) -> std::io::Result<StringOrVariant> {
         let mut variant = Variant::new(record, header_map);
@@ -325,6 +326,14 @@ impl<'lua> VCFExpress<'lua> {
                 Err(e) => return Err(e),
             };
             match self.globals.raw_set("variant", ud) {
+                Ok(_) => (),
+                Err(e) => return Err(e),
+            }
+            let hud = match scope.create_any_userdata_ref(header) {
+                Ok(ud) => ud,
+                Err(e) => return Err(e),
+            };
+            match self.globals.raw_set("header", hud) {
                 Ok(_) => (),
                 Err(e) => return Err(e),
             }

@@ -30,8 +30,8 @@ struct Cli {
 pub enum Commands {
     /// Filter a VCF/BCF and optionally print by template expression.
     /// If no template is given the output will be VCF/BCF
-   #[command(arg_required_else_help(true))]
-#[command(help_template = "
+    #[command(arg_required_else_help(true))]
+    #[command(help_template = "
 {name} {version}
 {about-with-newline}
 {usage-heading} {usage}
@@ -97,11 +97,11 @@ fn filter_main(
     let mut writer = vcfexpr.writer();
 
     let header_map = HeaderMap::new();
-
+    let header = reader.header().clone();
     for record in reader.records() {
         let mut record = record?;
         writer.translate(&mut record);
-        let mut sob = vcfexpr.evaluate(record, header_map.clone())?;
+        let mut sob = vcfexpr.evaluate(record, &header, header_map.clone())?;
         writer.write(&mut sob)?;
     }
     Ok(())

@@ -452,6 +452,21 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                                     }
                                 })
                                 .map_err(|e| mlua::Error::ExternalError(Arc::new(e))),
+                            (bcf::header::TagType::Float, _) => fmt
+                                .float()
+                                .map(|v| match num {
+                                    bcf::header::TagLength::Fixed(1) => {
+                                        Value::Number(v[sample_id][0] as f64)
+                                    }
+                                    _ => {
+                                        let t = lua.create_table().expect("error creating table");
+                                        for (i, val) in v[sample_id].iter().enumerate() {
+                                            t.raw_set(i + 1, *val).expect("error setting value");
+                                        }
+                                        Value::Table(t)
+                                    }
+                                })
+                                .map_err(|e| mlua::Error::ExternalError(Arc::new(e))),
                             (bcf::header::TagType::String, _) => fmt
                                 .string()
                                 .map(|v| match num {
@@ -475,15 +490,20 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                                 _ => return,
                             };
                             let mut phases = vec![];
+                            let mut alts = 0;
                             for i in 1..=gt.len().expect("error getting GT length") {
                                 let allele = gt.get::<_, i64>(i).expect("error getting allele");
                                 phases.push(allele & 1 == 1);
+                                alts += (allele >> 1) - 1;
                                 gt.raw_set(i, (allele >> 1) - 1)
                                     .expect("error setting value in GT table");
                             }
                             sample
                                 .raw_set("phase", phases)
                                 .expect("error setting genotype phases");
+                            sample
+                                .raw_set("alts", alts)
+                                .expect("error setting genotype alts");
                         }
                         match value {
                             Ok(val) => sample
