@@ -525,7 +525,6 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
             "samples",
             |lua: &Lua, this: &Variant, fields: Option<HashMap<String, bool>>| {
                 let mut samples = HashMap::new();
-                let n_samples = this.record.sample_count() as usize;
 
                 // Create a table for each sample
                 let sample_names = this
@@ -578,8 +577,9 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                                         continue;
                                     }
                                     Ok(v) => {
-                                        for sample_id in 0..n_samples {
-                                            let sample_name = &sample_names[sample_id];
+                                        for (sample_id, sample_name) in
+                                            sample_names.iter().enumerate()
+                                        {
                                             let sample = samples
                                                 .get_mut(sample_name)
                                                 .expect("error getting sample map");
@@ -638,8 +638,9 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                                         continue;
                                     }
                                     Ok(v) => {
-                                        for sample_id in 0..n_samples {
-                                            let sample_name = &sample_names[sample_id];
+                                        for (sample_id, sample_name) in
+                                            sample_names.iter().enumerate()
+                                        {
                                             let sample = samples
                                                 .get_mut(sample_name)
                                                 .expect("error getting sample map");
@@ -661,8 +662,9 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                                         continue;
                                     }
                                     Ok(v) => {
-                                        for sample_id in 0..n_samples {
-                                            let sample_name = &sample_names[sample_id];
+                                        for (sample_id, sample_name) in
+                                            sample_names.iter().enumerate()
+                                        {
                                             let sample = samples
                                                 .get_mut(sample_name)
                                                 .expect("error getting sample map");
