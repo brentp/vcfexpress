@@ -1,6 +1,7 @@
 # VCFExpress Lua API Documentation
 
 This document details all Lua attributes and functions available when using VCFExpress.
+We use [luau](https://luau.org/) as the underlying lua library. This has extra features seen [here](https://luau.org/library)
 
 ## Global Functions
 

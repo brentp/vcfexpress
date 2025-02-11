@@ -4,3 +4,4 @@ examples/add_filter_to_header.lua
 set.vcf.gz
 o
 _test.*
+*.vcf

@@ -46,9 +46,9 @@ impl EitherWriter {
         }
     }
 
-    pub fn write(&mut self, sob: &mut StringOrVariant) -> std::io::Result<()> {
+    pub fn write(&mut self, sob: &mut StringOrVariant) -> std::io::Result<u32> {
         match sob {
-            StringOrVariant::None => Ok(()),
+            StringOrVariant::None => Ok(0),
             StringOrVariant::Variant(None) => Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "expected VCF record got None",
@@ -56,7 +56,7 @@ impl EitherWriter {
             StringOrVariant::Variant(Some(ref mut record)) => {
                 if let EitherWriter::Vcf(ref mut wtr) = self {
                     match wtr.write(record) {
-                        Ok(_) => Ok(()),
+                        Ok(_) => Ok(1),
                         Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
                     }
                 } else {
@@ -72,8 +72,8 @@ impl EitherWriter {
                     std::io::ErrorKind::Other,
                     "did not VCF writer with template",
                 )),
-                EitherWriter::File(ref mut f) => writeln!(f, "{}", s),
-                EitherWriter::Stdout(ref mut f) => writeln!(f, "{}", s),
+                EitherWriter::File(ref mut f) => writeln!(f, "{}", s).map(|_| 1),
+                EitherWriter::Stdout(ref mut f) => writeln!(f, "{}", s).map(|_| 1),
             },
         }
     }

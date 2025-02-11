@@ -95,15 +95,27 @@ fn filter_main(
 
     let mut reader = vcfexpr.reader();
     let mut writer = vcfexpr.writer();
+    let start_time = std::time::Instant::now();
 
     let header_map = HeaderMap::new();
     let header = reader.header().clone();
+    let mut written = 0;
+    let mut total = 0;
     for record in reader.records() {
         let mut record = record?;
         writer.translate(&mut record);
         let mut sob = vcfexpr.evaluate(record, &header, header_map.clone())?;
-        writer.write(&mut sob)?;
+        written += writer.write(&mut sob)?;
+        total += 1;
     }
+    log::info!(
+        "{} of {} records written ({:.2}%) in {:.1}s. evaluated {:.0} variants/second",
+        written,
+        total,
+        written as f64 / total as f64 * 100.0,
+        start_time.elapsed().as_millis() as f64 / 1000.0,
+        1000.0 * (total as f64 / start_time.elapsed().as_millis() as f64)
+    );
     Ok(())
 }
 

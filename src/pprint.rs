@@ -6,6 +6,11 @@ function pprint(node)
     local cache, stack, output = {},{},{}
     local depth = 1
     local output_str = "{"
+    -- if node is a number or string, return it as is
+    if type(node) == "number" or type(node) == "string" then
+        print(tostring(node))
+        return
+    end
 
     while true do
         local size = 0
