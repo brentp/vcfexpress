@@ -158,3 +158,5 @@ function any(f, t, skip_nil)
 end
 
 "#;
+
+pub const LUA_PRELUDE: &str = include_str!("prelude.lua");

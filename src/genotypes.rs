@@ -193,7 +193,7 @@ mod tests {
         lua.scope(|scope| {
             let ud = scope.create_any_userdata_ref_mut(&mut variant).unwrap();
             globals.raw_set("variant", ud).unwrap();
-            let gtstring = gts_exp.call::<_, String>(());
+            let gtstring = gts_exp.call::<String>(());
             assert!(gtstring.is_ok());
             let gtstring = gtstring.unwrap();
             assert_eq!(gtstring, "0|1".to_string());

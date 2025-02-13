@@ -9,14 +9,14 @@ use std::{collections::HashMap, hash::Hash, io::Write};
 use crate::variant::{HeaderMap, Variant};
 
 /// VCFExpress is the only entry-point for this library.
-pub struct VCFExpress<'lua> {
-    lua: &'lua Lua,
+pub struct VCFExpress {
+    lua: Lua,
     vcf_reader: Option<bcf::Reader>,
-    template: Option<mlua::Function<'lua>>,
+    template: Option<mlua::Function>,
     writer: Option<EitherWriter>,
-    expressions: Vec<mlua::Function<'lua>>,
-    set_expressions: HashMap<InfoFormat, ((TagType, TagLength), mlua::Function<'lua>)>,
-    globals: mlua::Table<'lua>,
+    expressions: Vec<mlua::Function>,
+    set_expressions: HashMap<InfoFormat, ((TagType, TagLength), mlua::Function)>,
+    globals: mlua::Table,
     variants_evaluated: usize,
     variants_passing: usize,
 }
@@ -87,7 +87,7 @@ fn get_vcf_format(path: &str) -> bcf::Format {
     }
 }
 
-fn process_template(template: Option<String>, lua: &Lua) -> Option<mlua::Function<'_>> {
+fn process_template(template: Option<String>, lua: &Lua) -> Option<mlua::Function> {
     if let Some(template) = template.as_ref() {
         // check if template contains backticks
         let return_pre = if template.contains("return ") {
@@ -122,7 +122,7 @@ enum InfoFormatValue {
     String(String),
 }
 
-impl<'lua> VCFExpress<'lua> {
+impl VCFExpress {
     /// Create a new VCFExpress object. This object will read a VCF file, evaluate a set of expressions.
     /// The expressions should return a boolean. Evaluations will stop on the first true expression.
     /// If a template is provided, the template will be evaluated in the same scope as the expression and used
@@ -132,7 +132,7 @@ impl<'lua> VCFExpress<'lua> {
     /// [luau string template]: https://luau-lang.org/syntax#string-interpolation
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        lua: &'lua Lua,
+        lua: Lua,
         vcf_path: String,
         expression: Vec<String>,
         set_expression: Vec<String>,
@@ -146,15 +146,18 @@ impl<'lua> VCFExpress<'lua> {
         lua.load(crate::pprint::PRELUDE)
             .set_name("prelude")
             .exec()?;
+        lua.load(crate::pprint::LUA_PRELUDE)
+            .set_name("lua_prelude")
+            .exec()?;
 
         let mut reader = match vcf_path.as_str() {
             "-" | "stdin" => bcf::Reader::from_stdin()?,
             _ => bcf::Reader::from_path(&vcf_path)?,
         };
         _ = reader.set_threads(2);
-        crate::register(lua)?;
+        crate::register(&lua)?;
         let globals = lua.globals();
-        let template = process_template(template, lua);
+        let template = process_template(template, &lua);
 
         let exps: Vec<_> = expression
             .iter()
@@ -179,7 +182,7 @@ impl<'lua> VCFExpress<'lua> {
             Ok(())
         })?;
 
-        let info_exps = VCFExpress::load_info_expressions(lua, &mut hv, set_expression)?;
+        let info_exps = VCFExpress::load_info_expressions(&lua, &mut hv, set_expression)?;
 
         let header = bcf::header::Header::from_template(&hv);
 
@@ -221,11 +224,11 @@ impl<'lua> VCFExpress<'lua> {
 
     #[allow(clippy::type_complexity)]
     fn load_info_expressions(
-        lua: &'lua Lua,
+        lua: &Lua,
         hv: &mut bcf::header::HeaderView,
         info_expressions: Vec<String>,
     ) -> Result<
-        HashMap<InfoFormat, ((TagType, TagLength), mlua::Function<'lua>)>,
+        HashMap<InfoFormat, ((TagType, TagLength), mlua::Function)>,
         Box<dyn std::error::Error>,
     > {
         let info_exps: HashMap<_, _> = info_expressions
@@ -288,19 +291,19 @@ impl<'lua> VCFExpress<'lua> {
             if let InfoFormat::Info(tag) = inf {
                 let t = match tagtyp {
                     TagType::Flag => {
-                        let b = expr.call::<_, bool>(())?;
+                        let b = expr.call::<bool>(())?;
                         InfoFormatValue::Bool(b)
                     }
                     TagType::Float => {
-                        let f = expr.call::<_, f32>(())?;
+                        let f = expr.call::<f32>(())?;
                         InfoFormatValue::Float(f)
                     }
                     TagType::Integer => {
-                        let i = expr.call::<_, i32>(())?;
+                        let i = expr.call::<i32>(())?;
                         InfoFormatValue::Integer(i)
                     }
                     TagType::String => {
-                        let s = expr.call::<_, String>(())?;
+                        let s = expr.call::<String>(())?;
                         InfoFormatValue::String(s)
                     }
                 };
@@ -319,8 +322,9 @@ impl<'lua> VCFExpress<'lua> {
     ) -> std::io::Result<StringOrVariant> {
         let mut variant = Variant::new(record, header_map);
         self.variants_evaluated += 1;
+        let mut variants_passing = 0;
         let mut info_results = HashMap::new();
-        let eval_result = self.lua.scope(|scope| {
+        let eval_result = (&self.lua).scope(|scope| {
             let ud = match scope.create_any_userdata_ref_mut(&mut variant) {
                 Ok(ud) => ud,
                 Err(e) => return Err(e),
@@ -341,13 +345,13 @@ impl<'lua> VCFExpress<'lua> {
             // we have many expressions, we stop on the first passing expression. The result of this scope
             // can be either a bool, or a string (if we have a template).
             for exp in &self.expressions {
-                match exp.call::<_, bool>(()) {
+                match exp.call::<bool>(()) {
                     Err(e) => return Err(e),
                     Ok(true) => {
-                        self.variants_passing += 1;
+                        variants_passing += 1;
                         if let Some(template) = &self.template {
                             // if we have a template, we want to evaluate it in this same scope.
-                            return match template.call::<_, String>(()) {
+                            return match template.call::<String>(()) {
                                 Ok(res) => Ok(StringOrVariant::String(res)),
                                 Err(e) => {
                                     log::error!("Error in template: {}", e);
@@ -363,6 +367,7 @@ impl<'lua> VCFExpress<'lua> {
 
             Ok(StringOrVariant::None)
         });
+        self.variants_passing += variants_passing;
 
         let mut record = variant.take();
         for (stag, value) in info_results {
@@ -423,7 +428,7 @@ mod tests {
         assert!(result.is_some());
         // execute the result
         let result = result.unwrap();
-        let result = result.call::<_, String>(());
+        let result = result.call::<String>(());
         assert!(result.is_ok());
     }
 
@@ -434,7 +439,7 @@ mod tests {
         let result = process_template(template, &lua);
         assert!(result.is_some());
         let result = result.unwrap();
-        let result = result.call::<_, i32>(());
+        let result = result.call::<i32>(());
         if let Ok(result) = result {
             assert_eq!(result, 42);
         } else {
