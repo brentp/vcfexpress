@@ -170,30 +170,31 @@ pub(crate) fn register_header(lua: &Lua) -> mlua::Result<()> {
         reg.add_function_mut(
             "add_filter",
             |_lua, (ud, tbl): (AnyUserData, HashMap<String, String>)| {
-                let this = ud.borrow_mut::<HeaderView>()?;
-                let c_str = std::ffi::CString::new(format!(
-                    r#"##FILTER=<ID={},Description="{}">"#,
-                    handle_hash_get(&tbl, "ID", "filter")?,
-                    handle_hash_get(&tbl, "Description", "filter")?,
-                ))
-                .expect("CString::new failed");
-                let ret =
-                    unsafe { rust_htslib::htslib::bcf_hdr_append(this.inner, c_str.as_ptr()) };
-                if ret != 0 {
-                    log::error!("Error adding FILTER field for {:?}: {}", tbl, ret);
-                    return Err(mlua::Error::ExternalError(Arc::new(
-                        std::io::Error::last_os_error(),
-                    )));
-                }
-                let ret = unsafe { rust_htslib::htslib::bcf_hdr_sync(this.inner) };
-                if ret != 0 {
-                    log::warn!(
-                        "Error syncing header after adding FILTER field for {:?}: {}",
-                        tbl,
-                        ret
-                    );
-                }
-                Ok(())
+                ud.borrow_mut_scoped::<HeaderView, Result<(), mlua::Error>>(|this| {
+                    let c_str = std::ffi::CString::new(format!(
+                        r#"##FILTER=<ID={},Description="{}">"#,
+                        handle_hash_get(&tbl, "ID", "filter")?,
+                        handle_hash_get(&tbl, "Description", "filter")?,
+                    ))
+                    .expect("CString::new failed");
+                    let ret =
+                        unsafe { rust_htslib::htslib::bcf_hdr_append(this.inner, c_str.as_ptr()) };
+                    if ret != 0 {
+                        log::error!("Error adding FILTER field for {:?}: {}", tbl, ret);
+                        return Err(mlua::Error::ExternalError(Arc::new(
+                            std::io::Error::last_os_error(),
+                        )));
+                    }
+                    let ret = unsafe { rust_htslib::htslib::bcf_hdr_sync(this.inner) };
+                    if ret != 0 {
+                        log::warn!(
+                            "Error syncing header after adding FILTER field for {:?}: {}",
+                            tbl,
+                            ret
+                        );
+                    }
+                    Ok(())
+                })
             },
         );
         reg.add_function_mut(
