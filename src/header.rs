@@ -96,25 +96,25 @@ pub(crate) fn register_header(lua: &Lua) -> mlua::Result<()> {
             },
         );
         reg.add_meta_function(MetaMethod::ToString, |_lua, this: AnyUserData| {
-            let this = this.borrow::<WrapHeaderView>()?;
+            this.borrow_scoped::<WrapHeaderView, Result<String, mlua::Error>>(|this| {
+                let mut kstr = rust_htslib::htslib::kstring_t {
+                    l: 0,
+                    m: 0,
+                    s: std::ptr::null_mut(),
+                };
+                if unsafe { rust_htslib::htslib::bcf_hdr_format(this.0.inner, 0, &mut kstr) } != 0 {
+                    return Err(mlua::Error::ExternalError(Arc::new(
+                        std::io::Error::last_os_error(),
+                    )));
+                }
+                let s = unsafe {
+                    String::from_utf8_unchecked(
+                        std::slice::from_raw_parts(kstr.s as *const u8, kstr.l as usize).to_vec(),
+                    )
+                };
 
-            let mut kstr = rust_htslib::htslib::kstring_t {
-                l: 0,
-                m: 0,
-                s: std::ptr::null_mut(),
-            };
-            if unsafe { rust_htslib::htslib::bcf_hdr_format(this.0.inner, 0, &mut kstr) } != 0 {
-                return Err(mlua::Error::ExternalError(Arc::new(
-                    std::io::Error::last_os_error(),
-                )));
-            }
-            let s = unsafe {
-                String::from_utf8_unchecked(
-                    std::slice::from_raw_parts(kstr.s as *const u8, kstr.l as usize).to_vec(),
-                )
-            };
-
-            Ok(s)
+                Ok(s)
+            })
         });
         reg.add_field_method_get("samples", |_lua, this: &WrapHeaderView| {
             let samples = this
@@ -143,34 +143,34 @@ pub(crate) fn register_header(lua: &Lua) -> mlua::Result<()> {
         reg.add_function_mut(
             "add_info",
             |_lua, (ud, tbl): (AnyUserData, HashMap<String, String>)| {
-                eprintln!("in add_info");
-                let this = ud.borrow_mut::<WrapHeaderView>()?;
-                eprintln!("got this");
-                let c_str = std::ffi::CString::new(format!(
-                    r#"##INFO=<ID={},Number={},Type={},Description={}>"#,
-                    handle_hash_get(&tbl, "ID", "info")?,
-                    handle_hash_get(&tbl, "Number", "info")?,
-                    handle_hash_get(&tbl, "Type", "info")?,
-                    handle_hash_get(&tbl, "Description", "info")?,
-                ))
-                .expect("CString::new failed");
-                let ret =
-                    unsafe { rust_htslib::htslib::bcf_hdr_append(this.0.inner, c_str.as_ptr()) };
-                if ret != 0 {
-                    log::error!("Error adding INFO field for {:?}: {}", tbl, ret);
-                    return Err(mlua::Error::ExternalError(Arc::new(
-                        std::io::Error::last_os_error(),
-                    )));
-                }
-                let ret = unsafe { rust_htslib::htslib::bcf_hdr_sync(this.0.inner) };
-                if ret != 0 {
-                    log::warn!(
-                        "Error syncing header after adding INFO field for {:?}: {}",
-                        tbl,
-                        ret
-                    );
-                }
-                Ok(())
+                ud.borrow_mut_scoped::<WrapHeaderView, Result<(), mlua::Error>>(|this| {
+                    let c_str = std::ffi::CString::new(format!(
+                        r#"##INFO=<ID={},Number={},Type={},Description={}>"#,
+                        handle_hash_get(&tbl, "ID", "info")?,
+                        handle_hash_get(&tbl, "Number", "info")?,
+                        handle_hash_get(&tbl, "Type", "info")?,
+                        handle_hash_get(&tbl, "Description", "info")?,
+                    ))
+                    .expect("CString::new failed");
+                    let ret = unsafe {
+                        rust_htslib::htslib::bcf_hdr_append(this.0.inner, c_str.as_ptr())
+                    };
+                    if ret != 0 {
+                        log::error!("Error adding INFO field for {:?}: {}", tbl, ret);
+                        return Err(mlua::Error::ExternalError(Arc::new(
+                            std::io::Error::last_os_error(),
+                        )));
+                    }
+                    let ret = unsafe { rust_htslib::htslib::bcf_hdr_sync(this.0.inner) };
+                    if ret != 0 {
+                        log::warn!(
+                            "Error syncing header after adding INFO field for {:?}: {}",
+                            tbl,
+                            ret
+                        );
+                    }
+                    Ok(())
+                })
             },
         );
         reg.add_function_mut(
@@ -295,7 +295,6 @@ mod tests {
             .set_name("test_add_info")
             .into_function()
             .expect("error in test_add_info");
-
         lua.scope(|scope| {
             globals.set(
                 "header",
