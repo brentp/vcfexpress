@@ -46,8 +46,10 @@ impl fmt::Display for Genotype {
 pub fn register_genotypes(lua: &Lua) -> mlua::Result<()> {
     lua.register_userdata_type::<Genotype>(|reg| {
         reg.add_meta_function(MetaMethod::ToString, |_lua, this: AnyUserData| {
-            let gts = format!("{}", this.borrow::<Genotype>()?);
-            Ok(gts)
+            this.borrow_scoped::<Genotype, Result<String, mlua::Error>>(|this| {
+                let gts = format!("{}", this);
+                Ok(gts)
+            })
         });
         reg.add_field_method_get("alts", |_lua, this: &Genotype| {
             Ok(this
@@ -77,15 +79,16 @@ pub fn register_genotypes(lua: &Lua) -> mlua::Result<()> {
         reg.add_meta_function(
             MetaMethod::Index,
             |_lua, (this, idx): (AnyUserData, usize)| {
-                let gts = this.borrow::<Genotype>()?;
-                gts.0
-                    .get(idx - 1)
-                    .map(|allele| GTAllele(allele.0))
-                    .ok_or_else(|| {
-                        let msg =
-                            format!("index out of bounds: {} in len: {}", idx - 1, gts.0.len());
-                        mlua::Error::RuntimeError(msg)
-                    })
+                this.borrow_scoped::<Genotype, Result<GTAllele, mlua::Error>>(|gts| {
+                    gts.0
+                        .get(idx - 1)
+                        .map(|allele| GTAllele(allele.0))
+                        .ok_or_else(|| {
+                            let msg =
+                                format!("index out of bounds: {} in len: {}", idx - 1, gts.0.len());
+                            mlua::Error::RuntimeError(msg)
+                        })
+                })
             },
         );
     })?;
@@ -112,29 +115,32 @@ pub fn register_genotypes(lua: &Lua) -> mlua::Result<()> {
         reg.add_meta_function(
             MetaMethod::Index,
             |_lua, (this, idx): (AnyUserData, usize)| {
-                let ab = this.borrow::<Genotypes>()?;
-                let buffer = &ab.0.lock().0;
-                let len = buffer.len();
-                buffer
-                    .get(idx - 1)
-                    .map(|&x| {
-                        let gts = x
-                            .iter()
-                            .map(|&allele_int| {
-                                GTAllele(bcf::record::GenotypeAllele::from(allele_int))
-                            })
-                            .collect::<Vec<GTAllele>>();
-                        Genotype(gts)
-                    })
-                    .ok_or_else(|| {
-                        let msg = format!("index out of bounds: {} in len: {}", idx - 1, len);
-                        mlua::Error::RuntimeError(msg)
-                    })
+                this.borrow_scoped::<Genotypes, Result<Genotype, mlua::Error>>(|ab| {
+                    let buffer = &ab.0.lock().0;
+                    let len = buffer.len();
+                    buffer
+                        .get(idx - 1)
+                        .map(|&x| {
+                            let gts = x
+                                .iter()
+                                .map(|&allele_int| {
+                                    GTAllele(bcf::record::GenotypeAllele::from(allele_int))
+                                })
+                                .collect::<Vec<GTAllele>>();
+                            Genotype(gts)
+                        })
+                        .ok_or_else(|| {
+                            let msg = format!("index out of bounds: {} in len: {}", idx - 1, len);
+                            mlua::Error::RuntimeError(msg)
+                        })
+                })
             },
         );
         reg.add_meta_function(MetaMethod::Len, |_lua, this: AnyUserData| {
-            let len = this.borrow::<Genotypes>()?.0.lock().0.len();
-            Ok(len)
+            this.borrow_scoped::<Genotypes, Result<usize, mlua::Error>>(|ab| {
+                let len = ab.0.lock().0.len();
+                Ok(len)
+            })
         });
     })
 }
@@ -180,8 +186,8 @@ mod tests {
         let (lua, record) = setup();
         let gts_expr = r#"local gts = variant.genotypes; 
         --for i = 1, #gts do 
-        --print("printing from lua:", gts[i], "type:", type(i) )
-        --print(gts[i][1], gts[i][2]) 
+        --  print("printing from lua:", gts[i], "type:", type(i) )
+        -- print(gts[i][1], gts[i][2]) 
         --end
         local i = 1
         return tostring(gts[i])
@@ -194,6 +200,7 @@ mod tests {
             let ud = scope.create_any_userdata_ref_mut(&mut variant).unwrap();
             globals.raw_set("variant", ud).unwrap();
             let gtstring = gts_exp.call::<String>(());
+            eprintln!("gtstring: {:?}", gtstring);
             assert!(gtstring.is_ok());
             let gtstring = gtstring.unwrap();
             assert_eq!(gtstring, "0|1".to_string());

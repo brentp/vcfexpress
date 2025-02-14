@@ -60,6 +60,7 @@ fn find_record(
     if let Some(hrec) = hrec {
         return Ok(hrec);
     }
+    eprintln!("key {}, hdr_type:{:?} not found in header", key, hdr_type);
     Err(mlua::Error::ExternalError(Arc::new(std::io::Error::new(
         std::io::ErrorKind::InvalidInput,
         format!("key {}, hdr_type:{:?} not found in header", key, hdr_type),
@@ -72,11 +73,14 @@ pub(crate) fn register_header(lua: &Lua) -> mlua::Result<()> {
             "info_get",
             |_lua: &Lua, (ud, find_key): (AnyUserData, String)| {
                 // get the HREC
-                let this = ud.borrow_mut::<HeaderView>()?;
-                find_record(
-                    &this.header_records(),
-                    &find_key,
-                    rust_htslib::htslib::BCF_HL_INFO,
+                ud.borrow_mut_scoped::<HeaderView, Result<HashMap<String, String>, mlua::Error>>(
+                    |this| {
+                        find_record(
+                            &this.header_records(),
+                            &find_key,
+                            rust_htslib::htslib::BCF_HL_INFO,
+                        )
+                    },
                 )
             },
         );
@@ -84,11 +88,14 @@ pub(crate) fn register_header(lua: &Lua) -> mlua::Result<()> {
             "format_get",
             |_lua: &Lua, (ud, find_key): (AnyUserData, String)| {
                 // get the HREC
-                let this = ud.borrow_mut::<HeaderView>()?;
-                find_record(
-                    &this.header_records(),
-                    &find_key,
-                    rust_htslib::htslib::BCF_HL_FMT,
+                ud.borrow_mut_scoped::<HeaderView, Result<HashMap<String, String>, mlua::Error>>(
+                    |this| {
+                        find_record(
+                            &this.header_records(),
+                            &find_key,
+                            rust_htslib::htslib::BCF_HL_FMT,
+                        )
+                    },
                 )
             },
         );
@@ -368,5 +375,40 @@ mod tests {
             Ok(())
         })
         .expect("error in test_add_format")
+    }
+
+    #[test]
+    fn test_info_get() {
+        let (lua, _header, mut header_view) = setup();
+        let globals = lua.globals();
+
+        // First add an INFO field
+        let exp = lua
+            .load(
+                r#"
+            header:add_info({ID="TEST", Number="1", Type="Integer", Description="Test field"});
+            local info = header:info_get("TEST")
+            assert(info.ID == "TEST")
+            assert(info.Number == "1")
+            assert(info.Type == "Integer")
+            assert(info.Description == "Test field")
+            
+            -- test non-existent field
+            local info = header:info_get("NONEXISTENT")
+            assert(info == nil)
+            "#,
+            )
+            .set_name("test_info_get")
+            .into_function()
+            .expect("error in test_info_get");
+
+        lua.scope(|scope| {
+            globals.set(
+                "header",
+                scope.create_any_userdata_ref_mut(&mut header_view)?,
+            )?;
+            exp.call(())
+        })
+        .expect("error in test_info_get")
     }
 }
