@@ -173,7 +173,9 @@ impl<'lua> VCFExpress<'lua> {
         lua.scope(|scope| {
             globals.raw_set("header", scope.create_any_userdata_ref_mut(&mut hv)?)?;
             for path in lua_prelude {
-                let code = std::fs::read_to_string(&path)?;
+                let code = std::fs::read_to_string(&path).map_err(|e| {
+                    mlua::Error::RuntimeError(format!("Error reading file {}: {}", path, e))
+                })?;
                 lua.load(&code).set_name(path).exec()?;
             }
             Ok(())
@@ -255,7 +257,8 @@ impl<'lua> VCFExpress<'lua> {
     /// Add lua code to the Lua interpreter. This code will be available to the expressions and the template.
     /// These are not the variant expressions, but rather additional Lua code that can be used as a library.
     pub fn add_lua_code(&mut self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let code = std::fs::read_to_string(path)?;
+        let code = std::fs::read_to_string(path)
+            .map_err(|e| format!("Error reading file {}: {}", path, e))?;
         match self.lua.load(&code).set_name(path).exec() {
             Ok(_) => (),
             Err(e) => {
