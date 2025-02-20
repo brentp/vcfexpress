@@ -81,7 +81,7 @@ fn handle_format_integer<'lua>(
     num: &bcf::header::TagLength,
     sample_id: usize,
     tag_bytes: &[u8],
-) -> mlua::Result<LuaValue<'lua>> {
+) -> mlua::Result<LuaValue> {
     match num {
         bcf::header::TagLength::Fixed(1) if tag_bytes != b"GT" => {
             Ok(Value::Integer(v[sample_id][0]))
@@ -103,7 +103,7 @@ fn handle_format_float<'lua>(
     v: &BufferBacked<'_, Vec<&[f32]>, Buffer>,
     num: &bcf::header::TagLength,
     sample_id: usize,
-) -> mlua::Result<LuaValue<'lua>> {
+) -> mlua::Result<LuaValue> {
     match num {
         bcf::header::TagLength::Fixed(1) => Ok(Value::Number(v[sample_id][0] as f64)),
         _ => {
@@ -124,7 +124,7 @@ fn handle_format_string<'lua>(
     num: &bcf::header::TagLength,
     sample_id: usize,
     tag: &str,
-) -> mlua::Result<LuaValue<'lua>> {
+) -> mlua::Result<LuaValue> {
     match num {
         bcf::header::TagLength::Fixed(1) => Ok(Value::String(
             lua.create_string(unsafe { String::from_utf8_unchecked(v[sample_id].to_vec()) })
@@ -161,7 +161,7 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
             MetaMethod::Index,
             |_lua, (_, name): (AnyUserData, String)| {
                 let msg = format!("field '{}' variant.{} not found", name, name);
-                Err::<LuaValue<'_>, mlua::Error>(mlua::Error::RuntimeError(msg))
+                Err::<LuaValue, mlua::Error>(mlua::Error::RuntimeError(msg))
             },
         );
         reg.add_field_method_get("chrom", |_, this: &Variant| {
@@ -333,7 +333,7 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                                 t.raw_set(i + 1, ti).expect("error setting value");
                             }
                         }
-                        Ok::<LuaValue<'_>, mlua::Error>(Value::Table(t))
+                        Ok::<LuaValue, mlua::Error>(Value::Table(t))
                     })
                     .map_err(|e| mlua::Error::ExternalError(Arc::new(e))),
                 bcf::header::TagType::Float => fmt
@@ -354,7 +354,7 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                                 t.raw_set(i + 1, ti).expect("error setting value");
                             }
                         }
-                        Ok::<LuaValue<'_>, mlua::Error>(Value::Table(t))
+                        Ok::<LuaValue, mlua::Error>(Value::Table(t))
                     })
                     .map_err(|e| mlua::Error::ExternalError(Arc::new(e))),
 
@@ -370,7 +370,7 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                             t.raw_set(i + 1, unsafe { String::from_utf8_unchecked(vals.to_vec()) })
                                 .expect("error setting value");
                         }
-                        Ok::<LuaValue<'_>, mlua::Error>(Value::Table(t))
+                        Ok::<LuaValue, mlua::Error>(Value::Table(t))
                     },
                 )),
 
@@ -407,7 +407,7 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                         .map_err(|e| mlua::Error::ExternalError(Arc::new(e))),
                     bcf::header::TagType::Flag => info
                         .flag()
-                        .map(|v| Ok::<LuaValue<'_>, mlua::Error>(Value::Boolean(v)))
+                        .map(|v| Ok::<LuaValue, mlua::Error>(Value::Boolean(v)))
                         .map_err(|e| mlua::Error::ExternalError(Arc::new(e))),
                 }
             },
@@ -496,7 +496,7 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                             let mut phases = vec![];
                             let mut alts = 0;
                             for i in 1..=gt.len().expect("error getting GT length") {
-                                let allele = gt.get::<_, i64>(i).expect("error getting allele");
+                                let allele = gt.get::<i64>(i).expect("error getting allele");
                                 phases.push(allele & 1 == 1);
                                 alts += (allele >> 1) - 1;
                                 gt.raw_set(i, (allele >> 1) - 1)
@@ -598,7 +598,7 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
                                                         .expect("error getting GT length")
                                                     {
                                                         let allele = gt
-                                                            .get::<_, i64>(i)
+                                                            .get::<i64>(i)
                                                             .expect("error getting allele");
                                                         phases.push(allele & 1 == 1);
                                                         alts += (allele >> 1) - 1;
@@ -692,7 +692,7 @@ fn handle_integer_info<'lua>(
     v: Option<BufferBacked<'_, &[i32], Buffer>>,
     num: TagLength,
     index: Option<usize>,
-) -> mlua::Result<LuaValue<'lua>> {
+) -> mlua::Result<LuaValue> {
     match v {
         Some(v) => match (num, index) {
             (bcf::header::TagLength::Fixed(1), None) => Ok(Value::Integer(v[0])),
@@ -714,7 +714,7 @@ fn handle_float_info<'lua>(
     v: Option<BufferBacked<'_, &[f32], Buffer>>,
     num: TagLength,
     index: Option<usize>,
-) -> mlua::Result<LuaValue<'lua>> {
+) -> mlua::Result<LuaValue> {
     match v {
         Some(v) => match (num, index) {
             (bcf::header::TagLength::Fixed(1), None) => Ok(Value::Number(f64::from(v[0]))),
@@ -736,7 +736,7 @@ fn handle_string_info<'lua>(
     v: Option<BufferBacked<'_, Vec<&[u8]>, Buffer>>,
     num: TagLength,
     index: Option<usize>,
-) -> mlua::Result<LuaValue<'lua>> {
+) -> mlua::Result<LuaValue> {
     match v {
         Some(v) => match (num, index) {
             (bcf::header::TagLength::Fixed(1), None) => {

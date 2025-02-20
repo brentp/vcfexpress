@@ -10,11 +10,10 @@ license = "MIT"
 
 
 [dependencies]
-mlua = { version = "0.9.9", features = [
+mlua = { version = "0.10.3", features = [
     #"lua54",
     "luau", # required
     "send",
-    "parking_lot",
     #"module",
 ] }
 rust-htslib = { version = "0.47.0", features = ["libdeflate", "static"] }

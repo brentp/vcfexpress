@@ -83,7 +83,7 @@ fn filter_main(
     let lua = Lua::new();
 
     let mut vcfexpr = VCFExpress::new(
-        &lua,
+        lua,
         path,
         expressions,
         set_expression,

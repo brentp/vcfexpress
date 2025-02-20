@@ -60,6 +60,7 @@ fn find_record(
     if let Some(hrec) = hrec {
         return Ok(hrec);
     }
+    eprintln!("key {}, hdr_type:{:?} not found in header", key, hdr_type);
     Err(mlua::Error::ExternalError(Arc::new(std::io::Error::new(
         std::io::ErrorKind::InvalidInput,
         format!("key {}, hdr_type:{:?} not found in header", key, hdr_type),
@@ -72,11 +73,14 @@ pub(crate) fn register_header(lua: &Lua) -> mlua::Result<()> {
             "info_get",
             |_lua: &Lua, (ud, find_key): (AnyUserData, String)| {
                 // get the HREC
-                let this = ud.borrow_mut::<HeaderView>()?;
-                find_record(
-                    &this.header_records(),
-                    &find_key,
-                    rust_htslib::htslib::BCF_HL_INFO,
+                ud.borrow_mut_scoped::<HeaderView, Result<HashMap<String, String>, mlua::Error>>(
+                    |this| {
+                        find_record(
+                            &this.header_records(),
+                            &find_key,
+                            rust_htslib::htslib::BCF_HL_INFO,
+                        )
+                    },
                 )
             },
         );
@@ -84,34 +88,37 @@ pub(crate) fn register_header(lua: &Lua) -> mlua::Result<()> {
             "format_get",
             |_lua: &Lua, (ud, find_key): (AnyUserData, String)| {
                 // get the HREC
-                let this = ud.borrow_mut::<HeaderView>()?;
-                find_record(
-                    &this.header_records(),
-                    &find_key,
-                    rust_htslib::htslib::BCF_HL_FMT,
+                ud.borrow_mut_scoped::<HeaderView, Result<HashMap<String, String>, mlua::Error>>(
+                    |this| {
+                        find_record(
+                            &this.header_records(),
+                            &find_key,
+                            rust_htslib::htslib::BCF_HL_FMT,
+                        )
+                    },
                 )
             },
         );
         reg.add_meta_function(MetaMethod::ToString, |_lua, this: AnyUserData| {
-            let this = this.borrow::<HeaderView>()?;
+            this.borrow_scoped::<HeaderView, Result<String, mlua::Error>>(|this| {
+                let mut kstr = rust_htslib::htslib::kstring_t {
+                    l: 0,
+                    m: 0,
+                    s: std::ptr::null_mut(),
+                };
+                if unsafe { rust_htslib::htslib::bcf_hdr_format(this.inner, 0, &mut kstr) } != 0 {
+                    return Err(mlua::Error::ExternalError(Arc::new(
+                        std::io::Error::last_os_error(),
+                    )));
+                }
+                let s = unsafe {
+                    String::from_utf8_unchecked(
+                        std::slice::from_raw_parts(kstr.s as *const u8, kstr.l as usize).to_vec(),
+                    )
+                };
 
-            let mut kstr = rust_htslib::htslib::kstring_t {
-                l: 0,
-                m: 0,
-                s: std::ptr::null_mut(),
-            };
-            if unsafe { rust_htslib::htslib::bcf_hdr_format(this.inner, 0, &mut kstr) } != 0 {
-                return Err(mlua::Error::ExternalError(Arc::new(
-                    std::io::Error::last_os_error(),
-                )));
-            }
-            let s = unsafe {
-                String::from_utf8_unchecked(
-                    std::slice::from_raw_parts(kstr.s as *const u8, kstr.l as usize).to_vec(),
-                )
-            };
-
-            Ok(s)
+                Ok(s)
+            })
         });
         reg.add_field_method_get("samples", |_lua, this: &HeaderView| {
             let samples = this
@@ -127,16 +134,8 @@ pub(crate) fn register_header(lua: &Lua) -> mlua::Result<()> {
                 let sample_bytes = samples.iter().map(|x| x.as_bytes()).collect::<Vec<_>>();
                 match Header::from_template_subset(this, &sample_bytes) {
                     Ok(h) => {
-                        //_ = unsafe { rust_htslib::htslib::bcf_hdr_sync(h.inner) };
                         let header_t = unsafe { rust_htslib::htslib::bcf_hdr_dup(h.inner) };
                         *this = HeaderView::new(header_t);
-                        eprintln!(
-                            "samples from c directly: {:?}",
-                            this.samples()
-                                .iter()
-                                .map(|&x| String::from_utf8_lossy(x).to_string())
-                                .collect::<Vec<_>>()
-                        );
                         Ok(())
                     }
                     Err(e) => Err(mlua::Error::ExternalError(Arc::new(e))),
@@ -146,85 +145,88 @@ pub(crate) fn register_header(lua: &Lua) -> mlua::Result<()> {
         reg.add_function_mut(
             "add_info",
             |_lua, (ud, tbl): (AnyUserData, HashMap<String, String>)| {
-                let this = ud.borrow_mut::<HeaderView>()?;
-                let c_str = std::ffi::CString::new(format!(
-                    r#"##INFO=<ID={},Number={},Type={},Description={}>"#,
-                    handle_hash_get(&tbl, "ID", "info")?,
-                    handle_hash_get(&tbl, "Number", "info")?,
-                    handle_hash_get(&tbl, "Type", "info")?,
-                    handle_hash_get(&tbl, "Description", "info")?,
-                ))
-                .expect("CString::new failed");
-                let ret =
-                    unsafe { rust_htslib::htslib::bcf_hdr_append(this.inner, c_str.as_ptr()) };
-                if ret != 0 {
-                    log::error!("Error adding INFO field for {:?}: {}", tbl, ret);
-                    return Err(mlua::Error::ExternalError(Arc::new(
-                        std::io::Error::last_os_error(),
-                    )));
-                }
-                let ret = unsafe { rust_htslib::htslib::bcf_hdr_sync(this.inner) };
-                if ret != 0 {
-                    log::warn!(
-                        "Error syncing header after adding INFO field for {:?}: {}",
-                        tbl,
-                        ret
-                    );
-                }
-                Ok(())
+                ud.borrow_mut_scoped::<HeaderView, Result<(), mlua::Error>>(|this| {
+                    let c_str = std::ffi::CString::new(format!(
+                        r#"##INFO=<ID={},Number={},Type={},Description={}>"#,
+                        handle_hash_get(&tbl, "ID", "info")?,
+                        handle_hash_get(&tbl, "Number", "info")?,
+                        handle_hash_get(&tbl, "Type", "info")?,
+                        handle_hash_get(&tbl, "Description", "info")?,
+                    ))
+                    .expect("CString::new failed");
+                    let ret =
+                        unsafe { rust_htslib::htslib::bcf_hdr_append(this.inner, c_str.as_ptr()) };
+                    if ret != 0 {
+                        log::error!("Error adding INFO field for {:?}: {}", tbl, ret);
+                        return Err(mlua::Error::ExternalError(Arc::new(
+                            std::io::Error::last_os_error(),
+                        )));
+                    }
+                    let ret = unsafe { rust_htslib::htslib::bcf_hdr_sync(this.inner) };
+                    if ret != 0 {
+                        log::warn!(
+                            "Error syncing header after adding INFO field for {:?}: {}",
+                            tbl,
+                            ret
+                        );
+                    }
+                    Ok(())
+                })
             },
         );
         reg.add_function_mut(
             "add_filter",
             |_lua, (ud, tbl): (AnyUserData, HashMap<String, String>)| {
-                let this = ud.borrow_mut::<HeaderView>()?;
-                let c_str = std::ffi::CString::new(format!(
-                    r#"##FILTER=<ID={},Description="{}">"#,
-                    handle_hash_get(&tbl, "ID", "filter")?,
-                    handle_hash_get(&tbl, "Description", "filter")?,
-                ))
-                .expect("CString::new failed");
-                let ret =
-                    unsafe { rust_htslib::htslib::bcf_hdr_append(this.inner, c_str.as_ptr()) };
-                if ret != 0 {
-                    log::error!("Error adding FILTER field for {:?}: {}", tbl, ret);
-                    return Err(mlua::Error::ExternalError(Arc::new(
-                        std::io::Error::last_os_error(),
-                    )));
-                }
-                let ret = unsafe { rust_htslib::htslib::bcf_hdr_sync(this.inner) };
-                if ret != 0 {
-                    log::warn!(
-                        "Error syncing header after adding FILTER field for {:?}: {}",
-                        tbl,
-                        ret
-                    );
-                }
-                Ok(())
+                ud.borrow_mut_scoped::<HeaderView, Result<(), mlua::Error>>(|this| {
+                    let c_str = std::ffi::CString::new(format!(
+                        r#"##FILTER=<ID={},Description="{}">"#,
+                        handle_hash_get(&tbl, "ID", "filter")?,
+                        handle_hash_get(&tbl, "Description", "filter")?,
+                    ))
+                    .expect("CString::new failed");
+                    let ret =
+                        unsafe { rust_htslib::htslib::bcf_hdr_append(this.inner, c_str.as_ptr()) };
+                    if ret != 0 {
+                        log::error!("Error adding FILTER field for {:?}: {}", tbl, ret);
+                        return Err(mlua::Error::ExternalError(Arc::new(
+                            std::io::Error::last_os_error(),
+                        )));
+                    }
+                    let ret = unsafe { rust_htslib::htslib::bcf_hdr_sync(this.inner) };
+                    if ret != 0 {
+                        log::warn!(
+                            "Error syncing header after adding FILTER field for {:?}: {}",
+                            tbl,
+                            ret
+                        );
+                    }
+                    Ok(())
+                })
             },
         );
         reg.add_function_mut(
             "add_format",
             |_lua, (ud, tbl): (AnyUserData, HashMap<String, String>)| {
-                let this = ud.borrow_mut::<HeaderView>()?;
-                let c_str = std::ffi::CString::new(format!(
-                    r#"##FORMAT=<ID={},Number={},Type={},Description="{}">"#,
-                    handle_hash_get(&tbl, "ID", "format")?,
-                    handle_hash_get(&tbl, "Number", "format")?,
-                    handle_hash_get(&tbl, "Type", "format")?,
-                    handle_hash_get(&tbl, "Description", "format")?,
-                ))
-                .expect("CString::new failed");
-                let ret =
-                    unsafe { rust_htslib::htslib::bcf_hdr_append(this.inner, c_str.as_ptr()) };
-                if ret != 0 {
-                    log::error!("Error adding FORMAT field for {:?}: {}", tbl, ret);
-                    return Err(mlua::Error::ExternalError(Arc::new(
-                        std::io::Error::last_os_error(),
-                    )));
-                }
-                _ = unsafe { rust_htslib::htslib::bcf_hdr_sync(this.inner) };
-                Ok(())
+                ud.borrow_mut_scoped::<HeaderView, Result<(), mlua::Error>>(|this| {
+                    let c_str = std::ffi::CString::new(format!(
+                        r#"##FORMAT=<ID={},Number={},Type={},Description="{}">"#,
+                        handle_hash_get(&tbl, "ID", "format")?,
+                        handle_hash_get(&tbl, "Number", "format")?,
+                        handle_hash_get(&tbl, "Type", "format")?,
+                        handle_hash_get(&tbl, "Description", "format")?,
+                    ))
+                    .expect("CString::new failed");
+                    let ret =
+                        unsafe { rust_htslib::htslib::bcf_hdr_append(this.inner, c_str.as_ptr()) };
+                    if ret != 0 {
+                        log::error!("Error adding FORMAT field for {:?}: {}", tbl, ret);
+                        return Err(mlua::Error::ExternalError(Arc::new(
+                            std::io::Error::last_os_error(),
+                        )));
+                    }
+                    _ = unsafe { rust_htslib::htslib::bcf_hdr_sync(this.inner) };
+                    Ok(())
+                })
             },
         );
     })
@@ -296,7 +298,6 @@ mod tests {
             .set_name("test_add_info")
             .into_function()
             .expect("error in test_add_info");
-
         lua.scope(|scope| {
             globals.set(
                 "header",
@@ -374,5 +375,40 @@ mod tests {
             Ok(())
         })
         .expect("error in test_add_format")
+    }
+
+    #[test]
+    fn test_info_get() {
+        let (lua, _header, mut header_view) = setup();
+        let globals = lua.globals();
+
+        // First add an INFO field
+        let exp = lua
+            .load(
+                r#"
+            header:add_info({ID="TEST", Number="1", Type="Integer", Description="Test field"});
+            local info = header:info_get("TEST")
+            assert(info.ID == "TEST")
+            assert(info.Number == "1")
+            assert(info.Type == "Integer")
+            assert(info.Description == "Test field")
+            
+            -- test non-existent field
+            local info = header:info_get("NONEXISTENT")
+            assert(info == nil)
+            "#,
+            )
+            .set_name("test_info_get")
+            .into_function()
+            .expect("error in test_info_get");
+
+        lua.scope(|scope| {
+            globals.set(
+                "header",
+                scope.create_any_userdata_ref_mut(&mut header_view)?,
+            )?;
+            exp.call(())
+        })
+        .expect("error in test_info_get")
     }
 }
