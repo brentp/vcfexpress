@@ -327,7 +327,7 @@ impl VCFExpress {
         self.variants_evaluated += 1;
         let mut variants_passing = 0;
         let mut info_results = HashMap::new();
-        let eval_result = (&self.lua).scope(|scope| {
+        let eval_result = self.lua.scope(|scope| {
             let ud = match scope.create_any_userdata_ref_mut(&mut variant) {
                 Ok(ud) => ud,
                 Err(e) => return Err(e),

@@ -75,8 +75,8 @@ impl Variant {
 use log::{debug, log_enabled, Level};
 
 // NEW helper functions
-fn handle_format_integer<'lua>(
-    lua: &'lua Lua,
+fn handle_format_integer(
+    lua: &Lua,
     v: &BufferBacked<'_, Vec<&[i32]>, Buffer>,
     num: &bcf::header::TagLength,
     sample_id: usize,
@@ -98,8 +98,8 @@ fn handle_format_integer<'lua>(
     }
 }
 
-fn handle_format_float<'lua>(
-    lua: &'lua Lua,
+fn handle_format_float(
+    lua: &Lua,
     v: &BufferBacked<'_, Vec<&[f32]>, Buffer>,
     num: &bcf::header::TagLength,
     sample_id: usize,
@@ -118,8 +118,8 @@ fn handle_format_float<'lua>(
     }
 }
 
-fn handle_format_string<'lua>(
-    lua: &'lua Lua,
+fn handle_format_string(
+    lua: &Lua,
     v: &BufferBacked<'_, Vec<&[u8]>, Buffer>,
     num: &bcf::header::TagLength,
     sample_id: usize,
@@ -687,8 +687,8 @@ pub fn register_variant(lua: &Lua) -> mlua::Result<()> {
     })
 }
 
-fn handle_integer_info<'lua>(
-    lua: &'lua Lua,
+fn handle_integer_info(
+    lua: &Lua,
     v: Option<BufferBacked<'_, &[i32], Buffer>>,
     num: TagLength,
     index: Option<usize>,
@@ -709,8 +709,8 @@ fn handle_integer_info<'lua>(
     }
 }
 
-fn handle_float_info<'lua>(
-    lua: &'lua Lua,
+fn handle_float_info(
+    lua: &Lua,
     v: Option<BufferBacked<'_, &[f32], Buffer>>,
     num: TagLength,
     index: Option<usize>,
@@ -731,8 +731,8 @@ fn handle_float_info<'lua>(
     }
 }
 
-fn handle_string_info<'lua>(
-    lua: &'lua Lua,
+fn handle_string_info(
+    lua: &Lua,
     v: Option<BufferBacked<'_, Vec<&[u8]>, Buffer>>,
     num: TagLength,
     index: Option<usize>,
