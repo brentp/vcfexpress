@@ -1,0 +1,2 @@
+-- User can add custom Lua code here
+-- This file is loaded before any variants are processed

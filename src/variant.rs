@@ -1,6 +1,7 @@
 use log::{error, info, warn};
 use mlua::prelude::LuaValue;
 use mlua::{AnyUserData, Lua, MetaMethod, UserDataFields, UserDataMethods, Value};
+
 use parking_lot::Mutex;
 use rust_htslib::bcf::header::{TagLength, TagType};
 use rust_htslib::bcf::record::{Buffer, BufferBacked};

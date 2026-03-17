@@ -3,19 +3,13 @@ name = "vcfexpress"
 version = "0.3.5"
 edition = "2021"
 authors = ["Brent Pedersen <bpederse@gmail.com>"]
-description = "A tool for filtering VCF files using Lua expressions"
+description = "A tool for filtering VCF files using Lua or JavaScript expressions"
 readme = "README.md"
 homepage = "https://github.com/brentp/vcfexpress"
 license = "MIT"
 
 
 [dependencies]
-mlua = { version = "0.10.3", features = [
-    #"lua54",
-    "luau", # required
-    "send",
-    #"module",
-] }
 rust-htslib = { version = "0.47.0", features = ["libdeflate", "static"] }
 clap = { version = "4.5.4", features = ["derive"] }
 env_logger = "0.11.3"
@@ -25,6 +19,21 @@ parking_lot = { version = "0.12.3", features = ["arc_lock"] }
 libc = "0.2"
 mimalloc = "0.1.43"
 rustc-hash = "2.0.0"
+
+# Scripting language dependencies (feature-gated)
+mlua = { version = "0.10.3", optional = true, features = [
+    "luau", # required
+    "send",
+] }
+rquickjs = { version = "0.6.2", optional = true, features = [
+    "parallel",
+    "macro",
+] }
+
+[features]
+default = ["lua"]
+lua = ["mlua"]
+javascript = ["rquickjs"]
 
 [[bin]]
 name = "vcfexpress"

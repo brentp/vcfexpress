@@ -2,11 +2,11 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use clap::{Parser, Subcommand};
+use std::str::FromStr;
 
-use mlua::Lua;
 use rust_htslib::bcf::Read;
 
-use vcfexpress::{variant::HeaderMap, vcfexpress::VCFExpress};
+use vcfexpress::{variant::HeaderMap, vcfexpress::VCFExpress, script_engine::{ScriptLanguage, ScriptConfig, create_engine}};
 
 /// Args take the arguments for clap.
 /// Accept the path to VCF or BCF and the lua expressions
@@ -42,29 +42,36 @@ pub enum Commands {
         /// Path to input VCF or BCF file
         path: String,
 
-        /// boolean Lua expression(s) to filter the VCF or BCF file
+        /// Scripting language to use (lua or javascript). Default: lua
+        #[arg(short = 'L', long, default_value = "lua")]
+        language: String,
+
+        /// boolean expression(s) to filter the VCF or BCF file. Syntax depends on selected language.
         #[arg(short, long)]
         expression: Vec<String>,
 
         /// expression(s) to set existing INFO field(s) (new ones can be added in prelude)
-        /// e.g. --set-expression "AFmax=math.max(variant:info('AF'), variant:info('AFx'))"
+        /// e.g. --set-expression "AFmax=math.max(variant.info('AF'), variant.info('AFx'))"
         #[arg(short = 's', long)]
         set_expression: Vec<String>,
 
-        /// template expression in luau: https://luau-lang.org/syntax#string-interpolation. e.g. '{variant.chrom}:{variant.pos}'
+        /// template expression for output. Syntax depends on selected language.
+        /// Lua: use Luau interpolation '{variant.chrom}'
+        /// JavaScript: use template literals '${variant.chrom}'
         #[arg(short, long)]
         template: Option<String>,
 
-        /// File(s) containing lua(u) code to run once before any variants are processed.
+        /// File(s) containing code to run once before any variants are processed.
         /// `header` is available here to access or modify the header.
-        #[arg(short = 'p', long)]
-        lua_prelude: Vec<String>,
+        /// Use --lua-prelude for backward compatibility.
+        #[arg(short = 'p', long, alias = "lua-prelude")]
+        prelude: Vec<String>,
 
         /// Optional output file. Default is stdout.
         #[arg(short, long)]
         output: Option<String>,
 
-        /// Run lua code in https://luau.org/sandbox.
+        /// Run scripting code in sandbox mode.
         #[arg(short = 'b', long)]
         sandbox: bool,
     },
@@ -72,25 +79,38 @@ pub enum Commands {
 
 fn filter_main(
     path: String,
+    language: String,
     expressions: Vec<String>,
     set_expression: Vec<String>,
     template: Option<String>,
-    lua_prelude: Vec<String>,
+    prelude: Vec<String>,
     output: Option<String>,
     sandbox: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
-    let lua = Lua::new();
 
-    let mut vcfexpr = VCFExpress::new(
-        lua,
+    // Parse the language
+    let script_language = ScriptLanguage::from_str(&language)
+        .map_err(|e| format!("Invalid language '{}': {}", language, e))?;
+
+    // Create script configuration
+    let config = ScriptConfig {
+        sandbox,
+        language: script_language,
+    };
+
+    // Create the appropriate scripting engine
+    let engine = create_engine(&config)?;
+
+    // Use the new engine-based constructor
+    let mut vcfexpr = VCFExpress::new_with_engine(
+        engine,
         path,
         expressions,
         set_expression,
         template,
-        lua_prelude,
+        prelude,
         output,
-        sandbox,
     )?;
 
     let mut reader = vcfexpr.reader();
@@ -124,19 +144,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     match args.command {
         Some(Commands::Filter {
             path,
+            language,
             expression,
             set_expression,
             template,
-            lua_prelude,
+            prelude,
             output,
             sandbox,
         }) => {
             filter_main(
                 path,
+                language,
                 expression,
                 set_expression,
                 template,
-                lua_prelude,
+                prelude,
                 output,
                 sandbox,
             )?;

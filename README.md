@@ -7,19 +7,54 @@
 
 This is an experiment on how to implement user-expressions
 that can filter (and modify) a VCF and specify an output template.
-It uses lua as the expression language. It is [fast](https://brentp.github.io/vcfexpress/speed.html)
-Because of the speed and flexibility, we can, for example implement
-[CSQ parsing](https://github.com/brentp/vcfexpress/blob/main/scripts/csq.lua) in lua,
-just as a user could. The resulting functionality is as [fast or faster](https://brentp.github.io/vcfexpress/speed.html) than other tools
-that have this built in.
+It supports multiple scripting languages:
+- **Lua/Luau** (default) - Fast, lightweight, and battle-tested
+- **JavaScript** - Using rquickjs, provides access to JavaScript's rich ecosystem
 
-For the optional output template, it uses [luau string templates](https://luau-lang.org/syntax#string-interpolation)
-where luau is lua with some extensions and very good speed.
+The implementation is [fast](https://brentp.github.io/vcfexpress/speed.html) and flexible, allowing users to implement complex logic like
+[CSQ parsing](https://github.com/brentp/vcfexpress/blob/main/scripts/csq.lua) directly in their scripts.
+
+## Template Syntax
+
+Each language uses its native template syntax:
+- **Lua**: Luau string interpolation `{variant.chrom}`
+- **JavaScript**: Template literals `${variant.chrom}`
 
 # Installation
 
-+ For rust users: `cargo install vcfexpress`
-+ Otherwise see [Releases](https://github.com/brentp/vcfexpress/releases) for a static linux binary
+## Binary Release
++ See [Releases](https://github.com/brentp/vcfexpress/releases) for pre-built binaries
+
+## From Source
+### Default (Lua only)
+```bash
+cargo install vcfexpress
+```
+
+### With JavaScript support
+```bash
+cargo install vcfexpress --features javascript
+```
+
+### With both languages
+```bash
+cargo install vcfexpress --features lua,javascript
+```
+
+## Building from Source
+```bash
+git clone https://github.com/brentp/vcfexpress.git
+cd vcfexpress
+
+# Default (Lua only)
+cargo build --release
+
+# With JavaScript support
+cargo build --release --features javascript
+
+# With both languages
+cargo build --release --features lua,javascript
+```
 
 # Examples
 
@@ -169,6 +204,67 @@ pprint(sample)
 --]]
 ```
 
+# JavaScript Examples
+
+When using JavaScript with `--language javascript`, you can write the same logic using JavaScript syntax:
+
+## Basic Filtering
+```bash
+# Filter by INFO field value
+vcfexpress filter --language javascript \
+  -e 'return variant.info("AN") > 3000' \
+  -o high_an.bcf input.vcf
+
+# Use JavaScript array methods
+vcfexpress filter --language javascript \
+  -e 'return variant.filters.length === 0' \
+  -o pass_filters.bcf input.vcf
+```
+
+## Template Output
+```bash
+# Use JavaScript template literals
+vcfexpress filter --language javascript \
+  -e 'return true' \
+  -t '`${variant.chrom}:${variant.pos} ${variant.REF}>${variant.ALT[0]}`' \
+  -o output.txt input.vcf
+
+# More complex template
+vcfexpress filter --language javascript \
+  -e 'return variant.info("AF") > 0.05' \
+  -t '`${variant.id}\t${variant.chrom}\t${variant.pos}\t${variant.REF}\t${variant.ALT.join(",")}\t${variant.info("AF")}`' \
+  -o filtered.tsv input.vcf
+```
+
+## JavaScript Prelude File
+Create a JavaScript prelude file (`js_prelude.js`):
+```javascript
+// Add custom filter to header
+header.addFilter({
+  ID: "LowQual",
+  Description: "Quality score less than 1000"
+});
+
+// Helper function
+function isHighQuality(variant) {
+  return variant.qual >= 1000;
+}
+
+// Custom utility function
+function calculateMAF(variant) {
+  const af = variant.info("AF") || 0;
+  return Math.min(...af);
+}
+```
+
+Use it:
+```bash
+vcfexpress filter --language javascript \
+  -p js_prelude.js \
+  -e 'return isHighQuality(variant)' \
+  -o high_quality.vcf input.vcf
+```
+
 # Usage
 
 ```
@@ -180,18 +276,24 @@ Arguments:
   <PATH>  Path to input VCF or BCF file
 
 Options:
+  -L, --language <LANGUAGE>
+          Scripting language to use (lua or javascript). Default: lua
   -e, --expression <EXPRESSION>
-          boolean Lua expression(s) to filter the VCF or BCF file
+          boolean expression(s) to filter the VCF or BCF file. Syntax depends on selected language
   -s, --set-expression <SET_EXPRESSION>
-          expression(s) to set existing INFO field(s) (new ones can be added in prelude) e.g. --set-expression "AFmax=math.max(variant:info('AF'), variant:info('AFx'))"
+          expression(s) to set existing INFO field(s) (new ones can be added in prelude) e.g. --set-expression "AFmax=math.max(variant.info('AF'), variant.info('AFx'))"
   -t, --template <TEMPLATE>
-          template expression in luau: https://luau-lang.org/syntax#string-interpolation. e.g. '{variant.chrom}:{variant.pos}'
-  -p, --lua-prelude <LUA_PRELUDE>
-          File(s) containing lua(u) code to run once before any variants are processed. `header` is available here to access or modify the header
+          template expression for output. Language-specific syntax
+          Lua: use '{variant.chrom}'
+          JavaScript: use '${variant.chrom}'
+  -p, --prelude <PRELUDE>
+          File(s) containing code to run once before any variants are processed. 'header' is available here
+      --lua-prelude <LUA_PRELUDE>
+          Alias for --prelude (for backward compatibility)
   -o, --output <OUTPUT>
           Optional output file. Default is stdout
   -b, --sandbox
-          Run lua code in https://luau.org/sandbox
+          Run scripting code in sandbox mode
   -h, --help
           Print help
 ```
