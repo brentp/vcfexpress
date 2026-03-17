@@ -304,7 +304,7 @@ mod tests {
                 scope.create_any_userdata_ref_mut(&mut header_view)?,
             )?;
             let result: String = exp.call(())?;
-            let expected = "##fileformat=VCFv4.2\n##FILTER=<ID=PASS,Description=\"All filters passed\">\n##contig=<ID=chr1,length=10000>\n##INFO=<ID=TEST,Number=1,Type=Integer,Description=Test field>\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSample1\tSample2\n";
+            let expected = "##fileformat=VCFv4.2\n##FILTER=<ID=PASS,Description=\"All filters passed\">\n##contig=<ID=chr1,length=10000>\n##INFO=<ID=TEST,Number=1,Type=Integer,Description=\"Test field\">\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSample1\tSample2\n";
             assert_eq!(
                 result,
                 expected,
@@ -391,7 +391,8 @@ mod tests {
             assert(info.ID == "TEST")
             assert(info.Number == "1")
             assert(info.Type == "Integer")
-            assert(info.Description == "Test field")
+            print(info.Description)
+            assert(info.Description == "\"Test field\"", info.Description)
             
             -- test non-existent field
             local info = header:info_get("NONEXISTENT")
