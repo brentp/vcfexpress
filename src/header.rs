@@ -147,7 +147,7 @@ pub(crate) fn register_header(lua: &Lua) -> mlua::Result<()> {
             |_lua, (ud, tbl): (AnyUserData, HashMap<String, String>)| {
                 ud.borrow_mut_scoped::<HeaderView, Result<(), mlua::Error>>(|this| {
                     let c_str = std::ffi::CString::new(format!(
-                        r#"##INFO=<ID={},Number={},Type={},Description={}>"#,
+                        r#"##INFO=<ID={},Number={},Type={},Description="{}">"#,
                         handle_hash_get(&tbl, "ID", "info")?,
                         handle_hash_get(&tbl, "Number", "info")?,
                         handle_hash_get(&tbl, "Type", "info")?,

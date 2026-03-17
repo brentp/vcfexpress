@@ -1,3 +1,6 @@
+# v0.3.6
++ properly quote description in header:add_info (#3)
+
 # v0.3.5
 
 + add logging of number of variants/second and number of variants written.
