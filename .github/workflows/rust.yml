@@ -9,6 +9,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   LUAU_RELEASE_TAG: "0.739"
+  LUAU_UBUNTU_SHA256: "8a9b4b381021722c82d6e6cda0964b5c9e7f354ec1035fcd8b657acc22e49247"
 
 jobs:
   build:
@@ -32,6 +33,7 @@ jobs:
       run: |
         mkdir -p "$HOME/.local/bin"
         curl -fsSL -o /tmp/luau.zip "https://github.com/luau-lang/luau/releases/download/${LUAU_RELEASE_TAG}/luau-ubuntu.zip"
+        echo "${LUAU_UBUNTU_SHA256}  /tmp/luau.zip" | sha256sum -c -
         unzip -o /tmp/luau.zip luau -d "$HOME/.local/bin"
         chmod +x "$HOME/.local/bin/luau"
         echo "$HOME/.local/bin" >> "$GITHUB_PATH"
