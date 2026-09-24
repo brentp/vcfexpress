@@ -1,5 +1,5 @@
 /target
-/Cargo.lock
+#/Cargo.lock
 examples/add_filter_to_header.lua
 set.vcf.gz
 o
