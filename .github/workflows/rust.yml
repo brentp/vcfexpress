@@ -8,7 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  LUAU_VERSION: "0.739"
+  LUAU_RELEASE_TAG: "0.739"
 
 jobs:
   build:
@@ -31,7 +31,7 @@ jobs:
     - name: Install Luau
       run: |
         mkdir -p "$HOME/.local/bin"
-        curl -fsSL -o /tmp/luau.zip "https://github.com/luau-lang/luau/releases/download/${LUAU_VERSION}/luau-ubuntu.zip"
+        curl -fsSL -o /tmp/luau.zip "https://github.com/luau-lang/luau/releases/download/${LUAU_RELEASE_TAG}/luau-ubuntu.zip"
         unzip -o /tmp/luau.zip luau -d "$HOME/.local/bin"
         chmod +x "$HOME/.local/bin/luau"
         echo "$HOME/.local/bin" >> "$GITHUB_PATH"
